@@ -47,6 +47,15 @@ The manifest records, per accepted artifact:
 * `path`: normalized workspace-relative path (`/` separators, repository path case preserved).
 * `completionStatus`: the artifact's own completion status.
 * `contentSha256`: lowercase SHA-256 hexadecimal digest of the artifact's sanitized bytes.
+* `topology`: the artifact's own front-matter topology stamp, copied verbatim, or `unstamped` when it carries none.
+
+The manifest also records the frozen run context, carried verbatim from the run context lock resolved per the [Deployment Topology Contract](hve-resiliency-topology.instructions.md):
+
+* `topology`: `active-active` or `active-standby`. The declared deployment topology for the run, never a data write model.
+* `primaryRegion` and `secondaryRegion`: the resolved region display forms.
+* `researchRoot`: normalized workspace-relative research root.
+
+Every downstream stage inherits these four values from the manifest. No stage re-resolves the lock, re-derives topology from repository contents, or defaults the research root.
 
 The manifest also records the section-routing map and a frozen coverage snapshot:
 
@@ -58,6 +67,14 @@ The manifest also records the section-routing map and a frozen coverage snapshot
 * Coverage snapshot: required prompt IDs present or absent, and the applicable optional service IDs (applicability determined solely by accepted Prompt 1a and 1b Section 1 evidence).
 
 Each finding routes to exactly one primary section. The scopes above define which artifacts a fill prompt may read, not duplicate rendering of the same finding.
+
+## Topology Stamping and Mismatch
+
+Every artifact a stage in this pipeline writes, including the skeleton, each section fragment, each verify report, and the assembled consolidated document, records the manifest's `topology` in its front matter as `topology: <active-active|active-standby>` and states it with the resolved regions as an evaluation condition in its scope or assumptions section. Stamping is required, adds no section, and never carries a data write model.
+
+Before reading an accepted source artifact, compare its manifest-recorded `topology` against the manifest's run-context `topology`. A consolidation stage stops `Blocked` with `artifact topology mismatch - <path>` when they differ, and treats an artifact recorded as `unstamped` the same way: consolidation refuses it. Never assemble across topologies and never re-stamp a source artifact to make it fit.
+
+This is the sole `Blocked` condition added to Status and Failure Semantics. It is an inconsistent pipeline input, not a property of the repository under assessment. The research stages that produce these artifacts follow the opposite half of the same rule, warning and continuing; see Mismatch Handling in the [Deployment Topology Contract](hve-resiliency-topology.instructions.md). Do not apply the research half here.
 
 ## Manifest Auto-Location
 

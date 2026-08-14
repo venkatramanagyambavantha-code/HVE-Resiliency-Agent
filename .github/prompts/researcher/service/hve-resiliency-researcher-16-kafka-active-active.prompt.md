@@ -13,25 +13,86 @@ Kafka runs on Confluent Cloud; treat that as a confirmed platform fact and do no
 
 ## Eligibility And Scope
 
-Run Prompt 16 directly and only when the provided Prompt 1 output meets both entry
-conditions before any repository traversal or discovery action:
+Run Prompt 16 directly and only when both entry conditions hold before any repository
+traversal or discovery action:
 
-1. Prompt 1 Section 1 confirms Kafka as used.
-2. Prompt 1 Section 1 provides unambiguous database evidence that selects the
-   Active-Active Kafka topology under the Database-to-Kafka Pairing Standard.
+1. The resolved deployment topology is `active-active`.
+2. Prompt 1 Section 1 confirms Kafka as used.
 
-Confirm whether Cosmos DB and Azure SQL are present and whether the confirmed database
-model matches Active-Active Kafka. If either entry condition is missing or ambiguous,
-stop at round 0 with no discovery actions. Record the eligibility block in the concise
-scope summary and terminal-outcome summary. Do not infer eligibility, search for
-substitute eligibility evidence, or fall back to Prompt 0, another prompt, or
-conditional skill behavior.
+Resolve the deployment topology per the Topology Deltas section below. Topology is
+declared by the run context lock, never derived from database evidence, Kafka evidence,
+or any other repository content. This prompt is the `active-active` member of the
+topology-selected Prompt 16 pair. When the lock resolves `active-standby`, this prompt
+is not the selected member: stop at round 0 with no discovery actions and direct the
+user to `hve-resiliency-researcher-16-kafka-active-standby-confluent`.
+
+When Prompt 1 Section 1 does not confirm Kafka as used, stop at round 0 with no
+discovery actions. Record the eligibility block in the concise scope summary and
+terminal-outcome summary. Do not infer eligibility, search for substitute eligibility
+evidence, or fall back to Prompt 0, another prompt, or conditional skill behavior.
+
+Record the confirmed database write model as a cross-check under concern 18. It never
+establishes eligibility, never selects a prompt, and never stops the run.
 
 Apply the inherited service exclusion rule. Analyze only Kafka dependencies confirmed
 as used in Prompt 1 Section 1. Treat dependencies classified as Checked But Not Present
 or Not Applicable as excluded.
 
 For every eligible Kafka dependency, assess readiness for regional failover between West US 2 and West US.
+
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before any
+repository traversal or discovery action. The resolved topology scopes the 18 concern
+groups in Assessment Concerns. It adds no concern group, schema field, or section, and
+it never changes the seven-field issue schema in Authoritative Artifact.
+
+The Cluster Linking, mirror-topic, and feature-flag arrangement stated in Active-Active
+Architecture Invariants is a service-configuration contract to verify against evidence.
+It is not the deployment topology, and it never establishes, adjusts, or overrides the
+resolved topology.
+
+The database write model is discovered evidence about a datastore, distinct from the
+declared deployment topology. Read it from the producer artifact's `Data write model:`
+field, accepting `Topology verdict:` and `Topology classification:` as deprecated legacy
+labels for the same field and preferring `Data write model:` when more than one label is
+present. Normalize its value to `single-master`, `multi-master`, `mixed`, or `unknown`.
+
+Under the resolved `active-active` topology, treat these as in scope within the existing
+concern groups:
+
+* Concurrent production and consumption in both regions under steady state, and the
+  duplicate business processing that steady-state dual reads can create
+* Bidirectional replication lag between the peer clusters, and stale or incomplete
+  mirror state observed in either direction
+* Consumer-group offset synchronization across source writable, mirror, and promoted
+  topics in both directions
+* Keys, identifiers, and sequences generated independently in both regions, and the
+  cross-region collision that follows
+* Read-your-own-writes behavior when a read resolves in the region that did not take the
+  write
+* Region-affinity and single-active-region assumptions that bypass the feature flag while
+  both regions serve traffic
+* Capacity to absorb the full load in either region on partner loss
+* Own-region health reporting through global load balancer probes, continuously in both
+  regions
+
+Cold start and scale-from-zero of an idle region, standby deployment and configuration
+parity drift that stays unobservable while idle, promotion-only cutover replay windows,
+and single-writer promotion paths are out of scope under `active-active`. Do not emit an
+issue row or record an evidence gap for a suppressed dimension; a suppressed dimension is
+never recorded as an `Unknown` value or an `Unknown: two-round prompt budget exhausted`
+value.
+
+Where the observed write model or any other evidence does not fit the declared topology,
+continue under the declared topology and record the conflict per the contract's Mismatch
+Handling rules, under concern 18. Never switch topology, never redirect to the sibling
+prompt, and never decline to run because of a mismatch.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary
+region" and "secondary region", in analysis and issue prose. Do not introduce region
+names beyond the authoritative scenario this prompt already names.
 
 ## Task Researcher Boundary
 
@@ -102,9 +163,14 @@ Evaluate all 18 concern groups for every eligible Kafka dependency:
 17. Failback and regional recovery cover producer and consumer routing, offset
     synchronization, mirror rebuild, replay, backlog processing, and restoration of
     normal Active-Active operation.
-18. The confirmed database model matches Active-Active Kafka. Multi-master databases
-    pair with Active-Active Kafka, while any confirmed single-master database creates a
-    pairing mismatch.
+18. The discovered database write model cross-checked against the declared
+    `active-active` deployment topology. A `multi-master` write model fits it, and
+    `mixed` fits for its multi-master portion. A `single-master` write model is a
+    mismatch: emit a P0 issue row naming the declared topology, the observed write model
+    with its cited evidence, and the failure the mismatch implies. Record an `unknown`
+    write model as a named evidence gap in an existing schema field. The write model
+    never establishes, adjusts, or overrides the deployment topology, never selects a
+    prompt, and never stops the run.
 
 For each evidence-backed issue, classify the failure risk as P0, P1, P2, or P3 under
 the Application Platform Context. Explain why the classification applies and cite the
@@ -194,6 +260,12 @@ classes:
 1. A concise scope summary
 2. A terminal-outcome summary
 3. Canonical seven-field issue rows
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved regions as an
+evaluation condition in the concise scope summary. Stamp the resolved deployment topology
+only; never stamp a database write model in that field. Stamping is required and adds no
+section class.
 
 When eligibility fails at round 0, record the block in the first two section classes
 and produce no issue row without evidence. Keep action counters, round state, tool

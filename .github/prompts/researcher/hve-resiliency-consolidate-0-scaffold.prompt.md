@@ -21,6 +21,17 @@ Discover and freeze the accepted researcher artifacts for the current repository
 
 Enter discovery directly. Do not fill any section, allocate finding IDs, or set a terminal `Complete` status.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before enumerating candidates and before reading any artifact. This stage renders no finding, so it applies no assessment dimension itself. It resolves the topology exactly once and freezes it, so every downstream fill, verify, and finalize stage inherits it without re-resolving:
+
+* Record `topology`, `primaryRegion`, `secondaryRegion`, and `researchRoot` in the frozen manifest sidecar, carried verbatim from the lock and the resolved input root, alongside the per-artifact records and the coverage snapshot.
+* Stamp the resolved deployment topology in the emitted skeleton per Skeleton Emission.
+
+The frozen topology is the single source for every downstream stage. Each fill, verify, and finalize stage reads it from the manifest and never re-resolves it, re-derives it from artifact contents, or overrides it.
+
+Candidates are admitted by topology per the topology admission check in the Discovery Contract. Consolidation refuses a mismatched or unstamped artifact where a research prompt only records and warns, so a stamp difference that reaches this stage is a stop condition here rather than an in-band finding.
+
 ## Discovery Contract
 
 Treat the resolved research root as the only input root. Enumerate `.md` files under it recursively and sort by normalized workspace-relative path using ordinal comparison. Do not use file modification time to select among candidates. Do not read files outside the research root, follow symbolic links out of it, accept absolute paths, or accept paths containing traversal segments or alternate separators. Normalize paths to `/` while preserving repository path case.
@@ -28,6 +39,8 @@ Treat the resolved research root as the only input root. Enumerate `.md` files u
 Extract each candidate's prompt ID from its filename. Match the first case-insensitive occurrence of one of these anchored tokens: `researcher-<id>`, `prompt-<id>`, or `research-<id>`, where `<id>` is exactly one of `0`, `1a`, `1b`, or `2` through `19`. Reject filenames whose extracted ID is missing, resolves to more than one distinct ID, or falls outside the allowed set.
 
 Confirm the extracted prompt ID against the artifact body. Read the file's first non-empty heading plus its front matter or first 40 lines and require an explicit reference to the same prompt ID (for example `Prompt <id>`, `Researcher <id>`, or a producer schema identifier of the form `hve-resiliency-researcher-<id>`). Reject any candidate whose filename ID and body ID disagree, and any candidate that carries no body reference to a prompt ID.
+
+Apply the topology admission check to every candidate that survives body confirmation. Read the candidate's `topology` stamp from its front matter and compare it to the resolved topology under exact comparison after trimming and lowercasing. Admit only a candidate whose stamp equals the resolved topology. Reject a candidate whose stamp differs and stop `Blocked` with `artifact topology mismatch - <path>`. Treat a candidate that carries no stamp as `topology: unstamped`, reject it, and stop `Blocked` with `artifact topology unstamped - <path>`. Never infer a stamp from filename, path, dated segment, or artifact contents, and never admit a candidate by relaxing this check. Both Kafka prompts resolve to prompt ID `16`, so this check is the only control that keeps an artifact produced under the other topology out of the frozen manifest.
 
 Exclude the following even when their filenames match a prompt ID token:
 
@@ -49,19 +62,25 @@ Read each accepted artifact's bytes once and validate:
 * Conformance to the producer body schema for its prompt ID.
 * Repository relevance: identifiers, paths, and workspace references cited by the artifact belong to the current workspace.
 
-Stop `Blocked` with no fallback when the research root is missing, unreadable, or empty of admissible artifacts; when an admitted candidate is malformed, unreadable, or unsafe; or when accepted candidates disagree on repository identity. A required prompt ID (`0`, `1a`, `1b`, `2`, `3`, `4`, `5`, `6`, `7`) with zero admitted candidates does not block: record it as absent in the coverage snapshot and proceed, leaving its section to render bounded no evidence; finalize sets the terminal status to reflect the missing required coverage.
+Stop `Blocked` with no fallback when the research root is missing, unreadable, or empty of admissible artifacts; when an admitted candidate is malformed, unreadable, or unsafe; when a candidate fails the topology admission check as mismatched or unstamped; or when accepted candidates disagree on repository identity. A required prompt ID (`0`, `1a`, `1b`, `2`, `3`, `4`, `5`, `6`, `7`) with zero admitted candidates does not block: record it as absent in the coverage snapshot and proceed, leaving its section to render bounded no evidence; finalize sets the terminal status to reflect the missing required coverage.
 
 Freeze the discovery result after selection. Duplicate prompt IDs are resolved by the tie-break above rather than by stopping.
 
 ## Manifest Emission
 
-Emit the frozen manifest sidecar per the shared Frozen Manifest Sidecar Contract. Record per accepted artifact: `promptId`, normalized `path`, `completionStatus`, and `contentSha256`. Record the section-routing map: each accepted artifact's primary section (1-8) from the shared Section-to-Source Mapping, plus the enumerated Section 2.1 service-finding scope, Section 7 secret sweep scope, and Section 8 residual scope. Record the coverage snapshot: required prompt IDs present or absent, and applicable optional service IDs determined solely by accepted Prompt 1a and 1b Section 1 evidence.
+Emit the frozen manifest sidecar per the shared Frozen Manifest Sidecar Contract. Record the resolved run context first: `topology`, `primaryRegion`, `secondaryRegion`, and `researchRoot`, so every downstream fill inherits them without re-resolving. Record per accepted artifact: `promptId`, normalized `path`, `completionStatus`, `topology` stamp, and `contentSha256`. Record the section-routing map: each accepted artifact's primary section (1-8) from the shared Section-to-Source Mapping, plus the enumerated Section 2.1 service-finding scope, Section 7 secret sweep scope, and Section 8 residual scope. Record the coverage snapshot: required prompt IDs present or absent, and applicable optional service IDs determined solely by accepted Prompt 1a and 1b Section 1 evidence.
 
 ## Skeleton Emission
 
 Emit the consolidated document skeleton with the following structure and a reserved placeholder in each section body that finalize will replace with the assembled section fragment. Do not render any finding.
 
+Stamp the resolved deployment topology in the skeleton front matter as `topology: <active-active|active-standby>` and in the Assessment Scope block as a stated evaluation condition alongside the resolved regions, both carried verbatim from the frozen manifest. Stamp the resolved deployment topology only; never stamp a data write model in that field. Stamping is required and adds no section to the skeleton.
+
 ```markdown
+---
+topology: <active-active|active-standby>
+---
+
 # HVE Task Research - <repo-name>
 
 Assessment Scope:
@@ -69,6 +88,7 @@ Assessment Scope:
 * Repository: <repo-name>
 * Focus: Between West US 2 and West US regional failover
 * Regions Evaluated: West US 2 and West US
+* Deployment Topology: <active-active|active-standby>, evaluated across the resolved primary and secondary regions
 * Assessment Date: YYYY-MM-DD
 * Generated By: HVE Task Researcher
 * Schema Version: hve-resiliency-consolidation/v1
@@ -121,4 +141,4 @@ Notes:
 
 ## Completion
 
-Report the accepted-artifact count, the required-coverage snapshot, the emitted skeleton path, and the emitted manifest path. End with a next-step suggestion to run the Section 1 and Section 2 fill prompts.
+Report the resolved deployment topology, the accepted-artifact count, the required-coverage snapshot, the emitted skeleton path, and the emitted manifest path. End with a next-step suggestion to run the Section 1 and Section 2 fill prompts.

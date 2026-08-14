@@ -37,12 +37,23 @@ The sub-manifest records:
 * `generatedAt`: UTC date `YYYY-MM-DD`.
 * `outerManifestPath`: normalized workspace-relative path to the outer consolidation manifest.
 * `outerManifestSha256`: lowercase SHA-256 hexadecimal digest of the outer manifest's sanitized bytes at scaffold time.
+* `topology`: `active-active` or `active-standby`, copied verbatim from the outer manifest's run context. This is the declared deployment topology, never a data write model. Never re-resolve it from the run context lock and never derive it from repository contents.
+* `primaryRegion` and `secondaryRegion`: the resolved region display forms, copied verbatim from the outer manifest.
+* `researchRoot`: normalized workspace-relative research root, copied verbatim from the outer manifest.
 * `consolidatedDocDir`: normalized workspace-relative directory that holds `sections/section-8.md`.
 * `subSkeletonPath`: normalized workspace-relative path to the Section 8 sub-skeleton fragment file emitted by scaffold.
 * `subFragmentDir`: normalized workspace-relative directory holding the five group sub-fragments. Fixed to `<consolidatedDocDir>/sections/section-8-fragments/`.
 * `groupRouting`: the five fixed routing keys `core-context`, `platform-state`, `failure-crossrepo`, `secrets-adjacent`, `services`, each mapped to its fill prompt ID, its sub-fragment file name, and the enumerated accepted source artifact records that the group owns.
-* `sources`: the accepted source artifact records copied verbatim from the outer manifest, each carrying `promptId`, normalized `path`, `completionStatus`, and `contentSha256`.
+* `sources`: the accepted source artifact records copied verbatim from the outer manifest, each carrying `promptId`, normalized `path`, `completionStatus`, `contentSha256`, and `topology` (the artifact's own front-matter stamp as recorded by the outer manifest, or `unstamped`).
 * `servicesApplicability`: `applicable` when the outer manifest records at least one accepted optional service artifact (Prompt IDs `8`-`19`), otherwise `not-applicable`. This value is frozen; downstream stages do not re-derive it.
+
+## Topology Stamping and Mismatch
+
+Every artifact this nested pipeline writes, including the sub-skeleton, each group sub-fragment, the verify report, and the assembled `sections/section-8.md` fragment, records the sub-manifest's `topology` in its front matter as `topology: <active-active|active-standby>` and states it with the resolved regions as an evaluation condition in its scope or assumptions section. Stamping is required, adds no section, and never carries a data write model.
+
+Before reading an accepted source artifact routed to its group, a stage compares that artifact's recorded `topology` against the sub-manifest's `topology`. These are consolidation stages: stop `Blocked` with `artifact topology mismatch - <path>` when they differ, and refuse an artifact recorded as `unstamped` the same way. Never assemble across topologies and never re-stamp a source artifact to make it fit. This is the same additional `Blocked` condition defined in the [Consolidation Shared Contract](hve-resiliency-consolidation-shared.instructions.md), applied here; the research half of the rule in the [Deployment Topology Contract](hve-resiliency-topology.instructions.md), which warns and continues, does not apply to this pipeline.
+
+If the sub-manifest's `topology` differs from the outer manifest's at any stage, that is outer manifest drift: stop `Blocked` per Sub-Manifest Auto-Location.
 
 ## Sub-Manifest Auto-Location
 

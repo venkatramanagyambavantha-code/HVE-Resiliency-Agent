@@ -25,6 +25,34 @@ Apply these controls directly:
 * Keep all tools and repository operations read-only except progressive and final writes to the Prompt 16 output artifact.
 * Preserve secrets and personal data through the trusted transient processing rules below.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../../instructions/hve-resiliency-topology.instructions.md) before the prerequisite gate, the manifest freeze, or any concern query family. This prompt is the `active-standby` member of the topology-selected Prompt 16 pair and runs when the resolved deployment topology is `active-standby`. Topology comes from the run context lock, never from database evidence, Kafka evidence, or any other repository content. When the lock resolves `active-active`, this prompt is not the selected member: stop `blocked prerequisite/tool` with `wrong topology for this prompt - run /hve-resiliency-researcher-16-kafka-active-active` before any repository traversal.
+
+The resolved topology scopes the closed application concern taxonomy. It adds no concern ID, output field, or section, and it never changes the seven-field finding schema in Authoritative Finding Schema.
+
+Independent regional clusters, an active cluster, a standby cluster, managed replication, mirror-topic state, promotion, and failback remain user-confirmed scenario assumptions per Scope And Safety Controls. They are service-configuration claims, not the deployment topology, and they never establish, adjust, or override it.
+
+The data write model derived from prerequisites is discovered evidence about a datastore, distinct from the declared deployment topology. It never selects this prompt, never establishes or overrides a topology, and never silences a run.
+
+Under the resolved `active-standby` topology, treat these as in scope within the existing concern IDs:
+
+* One-way managed replication from the active to the standby cluster, mirror lag, and the records at risk at promotion (`KAS-11`, `KAS-18`)
+* Offset continuity, synchronized-offset use across promotion, and the bounded replay window promotion opens (`KAS-06`, `KAS-09`)
+* Cold client construction, startup-only client wiring, and warm-up on the standby, which is the promotion path (`KAS-01`, `KAS-16`)
+* Deployment and configuration parity of standby bootstrap endpoints, topics, group IDs, credentials, client versions, and observability, including drift that stays unobservable while the standby is idle (`KAS-14`, `KAS-19`)
+* Runtime cutover configuration and routing state that must reach the promoted cluster without a restart (`KAS-04`, `KAS-08`)
+* Idempotency and duplicate processing bounded to the cutover window rather than steady state (`KAS-05`, `KAS-09`, `KAS-13`)
+* Schedulers, singletons, and worker ownership that must not run against the standby and must activate on promotion (`KAS-16`)
+* Failback, reverse replication, backlog processing, and restored steady state (`KAS-18`)
+* Standby readiness proven without live traffic, aligned with global load balancer health and application readiness (`KAS-21`)
+
+Concurrent multi-region writes, cross-region unique identifier or sequence collision, cross-region read-your-own-writes, and steady-state duplicate processing arising from two simultaneously writable clusters are out of scope under `active-standby`. Do not admit a candidate, emit a finding, or record an evidence gap for a suppressed dimension; a suppressed dimension is never recorded as an `unknown/evidence gap`.
+
+Where prerequisite or repository evidence does not fit the declared topology, continue under the declared topology and record the conflict on `KAS-20` per the contract's Mismatch Handling rules. Never switch topology, never redirect to the sibling prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary region" and "secondary region", in analysis and finding prose. Do not introduce region names beyond the authoritative scenario labels this prompt already requires.
+
 ## Prerequisite Contract
 
 Derive `<repo-name>` from the workspace root as the case-preserving
@@ -58,21 +86,21 @@ The artifact body must contain, in order, the fixed H2 headings `## Section 1 - 
 Derive per-producer verdicts from the body without inference:
 
 * Prompt 1a and 1b Kafka verdict is `used` when a Section 1 H3 (ordinal-stripped, case-insensitive) contains `Kafka` or identifies an equivalent Kafka-protocol service such as `Event Hubs` with a documented Kafka-protocol endpoint or a Confluent product, and its evidence field carries at least one citation. It is `not-used` when the same canonical Kafka name appears only in Section 2 or Section 3 with a citation. It is `unknown` when neither section presents a citation-backed classification.
-* Prompt 12 and 13 database topology verdict is `single-master`, `multi-master`, or `mixed` when a Section 1 H3 (ordinal-stripped) identifies the covered database and a bulleted field labeled `Topology verdict:`, `Topology classification:`, or an equivalent producer-declared topology field states one of those hyphenated values with at least one supporting citation. It is `unknown` in any other case.
+* Prompt 12 and 13 data write model is `single-master`, `multi-master`, or `mixed` when a Section 1 H3 (ordinal-stripped) identifies the covered database and a bulleted field labeled `Data write model:` states one of those hyphenated values with at least one supporting citation. Accept `Topology verdict:`, `Topology classification:`, or an equivalent producer-declared field as deprecated legacy labels for the same field, and prefer `Data write model:` when more than one label is present. It is `unknown` in any other case. The data write model describes how a datastore accepts writes; it is never a deployment topology and never selects a prompt.
 
-Normalize source-prompt names case-insensitively after trimming whitespace. Normalize verdict values to lowercase and the exact hyphenated values above. Do not normalize any other value by synonym or inference.
+Normalize source-prompt names case-insensitively after trimming whitespace. Normalize verdict and write-model values to lowercase and the exact hyphenated values above. Do not normalize any other value by synonym or inference.
 
 Apply prerequisite consistency rules before repository discovery:
 
 1. Reject unreadable, malformed, wrong-repository, wrong-producer, nonterminal, or citation-free artifacts as blocked prerequisites.
 2. Reject duplicate artifacts for one producer as blocked unless their normalized verdicts and citation sets are byte-for-byte identical after line-ending normalization; retain one and record the duplicate.
 3. Kafka use is determined primarily by Prompt 1b, because Prompt 1a is scoped to Azure services and Prompt 1b is scoped to non-Azure services. Continue when the Prompt 1b Kafka verdict is `used`, regardless of the Prompt 1a Kafka verdict, provided the two verdicts do not directly contradict on the same Kafka-protocol backend. A direct contradiction exists only when Prompt 1a Section 1 identifies an Azure Kafka-protocol backend such as Event Hubs with a Kafka-protocol endpoint that Prompt 1b Section 2 or Section 3 disproves for the same broker set with a citation, or vice versa; classify a direct contradiction of that shape as blocked. Classify a Prompt 1b Kafka verdict of `unknown` as blocked. Classify a Prompt 1b Kafka verdict of `not-used` as not applicable, regardless of the Prompt 1a verdict.
-4. When Prompt 1a Section 1 identifies Cosmos DB or Azure SQL as used, require at least one matching Prompt 12 or Prompt 13 artifact, apply topology conflict rules (derive `mixed` only when one proves `single-master` and the other proves `multi-master`; identical normalized verdicts remain that verdict; any other conflict, malformed combination, or `unknown` is blocked), and use that verdict as the database-to-Kafka pairing input. When Prompt 1a places both Cosmos DB and Azure SQL in Section 2 or Section 3 and Prompt 1b Section 1 identifies a non-Azure database (for example, MongoDB Atlas) with a `Topology verdict:`, `Topology classification:`, or equivalent producer-declared topology field carrying a citation-backed hyphenated value, accept that Prompt 1b field as the pairing input under the same normalization rules and do not require Prompt 12 or Prompt 13. When neither Prompt 1a Section 1 nor Prompt 1b Section 1 establishes a citation-backed topology, treat the pairing input as `unknown` and record it as an evidence gap on the `KAS-20` concern rather than blocking the run.
-5. Classify `multi-master` as not applicable, because this active-standby prompt is not the selected pairing; direct the user to `hve-resiliency-researcher-16-kafka-active-active`. Classify `single-master` or `mixed` as eligible. Treat `unknown` per Rule 4 as an evidence gap on `KAS-20`, not as a blocker.
-6. Treat the Kafka platform as Confluent Cloud, a confirmed engagement platform fact; do not ask the operator which Kafka provider or Confluent product is in use. Establish whether the active-standby feature is in play (Cluster Linking, Replicator, MirrorMaker, or a user-named equivalent) from a cited prerequisite or the conversation. When the feature is established, run in Tier A and enable Confluent-specific concerns (`KAS-11`, and the managed-replication portions of `KAS-14`, `KAS-18`, and `KAS-20`). When the feature is not established but Prompt 1b Section 1 or the user establishes an Active-Standby Kafka topology with citations (for example, a `Topology classification: Active-Standby` producer field), run in Tier B: disposition every managed-replication-dependent assertion as `unknown/evidence gap` mapped to the missing feature detail, do not enter the Conditional External Evidence Protocol, and continue with the vendor-agnostic Kafka concerns. When neither the active-standby feature nor an Active-Standby topology is established, classify the run as blocked.
-7. When Prompt 1b Section 1 explicitly classifies the Kafka topology as Active-Active (or an equivalent multi-active label) with a citation, classify the run as not applicable and direct the user to `hve-resiliency-researcher-16-kafka-active-active`. Prompt 16 active-standby does not execute for that topology.
+4. When Prompt 1a Section 1 identifies Cosmos DB or Azure SQL as used, require at least one matching Prompt 12 or Prompt 13 artifact and derive the data write model from it (derive `mixed` only when one proves `single-master` and the other proves `multi-master`; identical normalized values remain that value; any other conflict, malformed combination, or `unknown` yields `unknown`). When Prompt 1a places both Cosmos DB and Azure SQL in Section 2 or Section 3 and Prompt 1b Section 1 identifies a non-Azure database (for example, MongoDB Atlas) with a `Data write model:` field, or a deprecated `Topology verdict:`, `Topology classification:`, or equivalent producer-declared field, carrying a citation-backed hyphenated value, accept that Prompt 1b field under the same normalization rules and do not require Prompt 12 or Prompt 13. When neither Prompt 1a Section 1 nor Prompt 1b Section 1 establishes a citation-backed value, the derived write model is `unknown`. The derived write model is a cross-check against the declared deployment topology and feeds the `KAS-20` assessment only. It never selects this prompt, never gates the run, and a missing, conflicting, or `unknown` write model is recorded as an evidence gap on `KAS-20` rather than blocking.
+5. Cross-check the derived write model against the declared `active-standby` topology and record the result on `KAS-20` per the Mismatch Handling rules: `single-master` fits the declared topology and is recorded as consistent; `mixed` is recorded as consistent for its single-master portion, with its multi-master portion handled by the next clause; `multi-master` is capability beyond what `active-standby` uses, so record a P2 mismatch finding naming the declared topology, the observed write model, and its prerequisite citations; `unknown` is an evidence gap. No write-model value changes eligibility, selects another prompt, suppresses a concern, or alters the terminal status.
+6. Treat the Kafka platform as Confluent Cloud, a confirmed engagement platform fact; do not ask the operator which Kafka provider or Confluent product is in use. The deployment topology is already established by the lock, so this rule decides only whether Confluent active-standby feature evidence is established: Cluster Linking, Replicator, MirrorMaker, or a user-named equivalent, from a cited prerequisite or the conversation. When the feature is established, run in Tier A and enable Confluent-specific concerns (`KAS-11`, and the managed-replication portions of `KAS-14`, `KAS-18`, and `KAS-20`). When the feature is not established, run in Tier B: disposition every managed-replication-dependent assertion as `unknown/evidence gap` mapped to the missing feature detail, do not enter the Conditional External Evidence Protocol, and continue with the vendor-agnostic Kafka concerns. Absent feature evidence never blocks the run and never makes it not applicable.
+7. A prerequisite that classifies the Kafka deployment as Active-Active, or an equivalent multi-active label, with a citation contradicts the declared `active-standby` topology. Record a P0 mismatch finding on `KAS-20` naming the declared topology, the cited contrary classification, and the failure it implies, then continue under the declared topology. Never switch topology, never redirect to `hve-resiliency-researcher-16-kafka-active-active`, and never classify the run as not applicable for that reason.
 
-Do not infer Kafka use, Confluent identity, database service identity, or database topology from generic repository evidence. Stop immediately after rendering the status-aware artifact when the gate is not applicable or blocked. Record the selected tier (Tier A or Tier B) and its evidence pointers in the prerequisite ledger.
+Do not infer Kafka use, Confluent identity, database service identity, or a data write model from generic repository evidence. Stop immediately after rendering the status-aware artifact when the gate is not applicable or blocked. Record the selected tier (Tier A or Tier B) and its evidence pointers in the prerequisite ledger.
 
 ## Assumption And Evidence-State Register
 
@@ -143,7 +171,7 @@ Use only the following concern IDs and meanings. Do not add, split, rename, or e
 17. `KAS-17`: Database writes, external API calls, Kafka transactions, outbox or inbox patterns, commit boundaries, poison messages, dead letters, and interrupted partial completion
 18. `KAS-18`: Failback and regional recovery, reconnection, replay, offset continuity, backlog processing, and restored steady state
 19. `KAS-19`: West US and West US 2 symmetry for bootstrap endpoints, topics, group IDs, retry policies, credentials, client versions, and observability
-20. `KAS-20`: Database-to-Kafka pairing between the prerequisite topology verdict and the active-standby Kafka scenario
+20. `KAS-20`: Database-to-Kafka pairing cross-check between the derived data write model and the declared active-standby deployment topology, including mismatch findings and write-model evidence gaps
 21. `KAS-21`: Alignment among GLB health, application readiness, Kafka connectivity, and downstream processing health
 
 ## Bounded Discovery And Read Protocol
@@ -200,7 +228,7 @@ Do not assign or escalate priority solely from an unknown, rejected inference, e
 Select exactly one status using this precedence:
 
 1. `blocked prerequisite/tool`: A prerequisite is invalid or a required tool failure prevents prerequisite, manifest, or citation validation.
-2. `not applicable`: Valid prerequisites exclude Kafka (Prompt 1b Kafka verdict `not-used`), select a database topology that does not pair with this active-standby prompt (`multi-master`), or classify the Kafka topology directly as Active-Active per Prerequisite Contract Rule 7. In each case, direct the user to `hve-resiliency-researcher-16-kafka-active-active` when the mismatch is a topology mismatch, or to the next applicable service-specific prompt when Kafka itself is not used.
+2. `not applicable`: Valid prerequisites exclude Kafka (Prompt 1b Kafka verdict `not-used`). Kafka being unused is the only route to this status; direct the user to the next applicable service-specific prompt. A `multi-master` or `unknown` write model, a prerequisite that classifies the Kafka deployment as Active-Active, and absent Confluent feature evidence are findings or evidence gaps under Prerequisite Contract Rules 5 through 7 and never select this status.
 3. `completed bounded partial`: A hard cap or nonessential tool failure leaves declared manifest or candidate coverage incomplete.
 4. `completed with unknowns/evidence gaps`: Eligible bounded research completes, but one or more material application assertions remain unknown.
 5. `completed with findings`: Eligible bounded research completes with one or more validated findings and no material unknowns.
@@ -211,6 +239,8 @@ Artifact write or validation failure changes any otherwise completed status to `
 ## Canonical Output Artifact
 
 Write progressively to `.copilot-tracking/research/<repo-name>-hve-resiliency-researcher-16-kafka-active-standby-confluent-research.md`. Write to a temporary sibling file, validate it, then atomically replace the final artifact. On interruption, preserve the latest valid temporary artifact and report its path without presenting it as final.
+
+Stamp the resolved deployment topology in the artifact front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation condition in `Scope And Terminal Status`. Stamp the resolved deployment topology only; never stamp a data write model in that field. Stamping is required and adds no section.
 
 Use this section order:
 
@@ -225,7 +255,7 @@ Use this section order:
 9. `Zero Findings Statement`
 10. `Validation And Handoff`
 
-The prerequisite ledger records producer, normalized verdict, citations, duplicate or conflict handling, and gate result. The coverage section records budgets consumed, saturation, caps reached, manifest exclusions, query families, reads, and bounded negative claims. The pairing section records `eligible`, `not applicable`, or `blocked` with prerequisite citations. Sections outside Findings carry candidate IDs, rejected inferences, unknowns, and coverage; do not add fields to finding rows.
+The prerequisite ledger records producer, normalized verdict, citations, duplicate or conflict handling, and gate result. The coverage section records budgets consumed, saturation, caps reached, manifest exclusions, query families, reads, and bounded negative claims. The pairing section records the declared deployment topology, the derived data write model with its prerequisite citations, and the `KAS-20` cross-check result as `consistent`, `mismatch`, or `evidence gap`; it never records a prompt-selection outcome. Sections outside Findings carry candidate IDs, rejected inferences, unknowns, and coverage; do not add fields to finding rows.
 
 When status is `completed zero findings`, state that no validated findings were produced within the declared bounded coverage. Otherwise write `Not applicable for this status` in Zero Findings Statement.
 
@@ -245,15 +275,15 @@ Only `Existing mitigations present (evidence)` and `Constraints/limitations (evi
 
 ## Validation And Response
 
-Before atomic replacement, verify frontmatter, repository name, exact section order, exactly one terminal status, prerequisite normalization, immutable manifest accounting, all hard-cap totals, candidate dispositions, deduplication keys, finding limits, exact finding field names and order, scenario separation, priority causal chains, citation existence and semantic support, redaction, retained byte count, zero-findings consistency, and absence of recommendations, examples, remediation, or planning content.
+Before atomic replacement, verify frontmatter, the resolved topology stamp in front matter and scope, repository name, exact section order, exactly one terminal status, prerequisite normalization, immutable manifest accounting, all hard-cap totals, candidate dispositions, deduplication keys, finding limits, exact finding field names and order, scenario separation, priority causal chains, citation existence and semantic support, redaction, retained byte count, zero-findings consistency, and absence of recommendations, examples, remediation, or planning content.
 
-Include an HVE next step for `completed with findings`, `completed zero findings`, or `completed with unknowns/evidence gaps`; suggest the next applicable service-specific prompt confirmed by Prompt 1a and 1b, or `/hve-resiliency-researcher-consolidate` when no applicable service remains. In `not applicable` status, direct the user to the sibling prompt implied by the mismatch (for example, `hve-resiliency-researcher-16-kafka-active-active` when the pairing input resolves to `multi-master` or when Prompt 1b classifies Kafka topology as Active-Active) and issue no other HVE next step for that status. Do not include an HVE next step for `blocked prerequisite/tool` or `completed bounded partial`. Mention Prompt 11 only when the HVE sequence and confirmed dependency inventory make it the next applicable service prompt; never route backward, and never suggest it for blocked or bounded-partial status.
+Include an HVE next step for `completed with findings`, `completed zero findings`, or `completed with unknowns/evidence gaps`; suggest the next applicable service-specific prompt confirmed by Prompt 1a and 1b, or `/hve-resiliency-researcher-consolidate` when no applicable service remains. In `not applicable` status, which Kafka being unused is the only route to, direct the user to the next applicable service-specific prompt confirmed by Prompt 1a and 1b, or `/hve-resiliency-researcher-consolidate` when no applicable service remains, and issue no other HVE next step for that status. Never route to `hve-resiliency-researcher-16-kafka-active-active` for a write-model mismatch or a contrary Kafka topology classification; those are `KAS-20` findings in this run's artifact. Do not include an HVE next step for `blocked prerequisite/tool` or `completed bounded partial`. Mention Prompt 11 only when the HVE sequence and confirmed dependency inventory make it the next applicable service prompt; never route backward, and never suggest it for blocked or bounded-partial status.
 
 Return only:
 
 * Final artifact path, or latest valid temporary path when finalization is blocked
 * Terminal status
-* Prerequisite gate result and database pairing verdict
+* Prerequisite gate result, resolved deployment topology, and the derived data write model with its `KAS-20` cross-check result
 * Findings, rejected candidates, and unknown/evidence-gap counts
 * Budget consumption and any exhausted cap
 * Validation result
