@@ -1,0 +1,2435 @@
+"Title","Work Item Type","Priority","Severity","State","Description","Acceptance Criteria","Tags"
+"P0-001: Foundry / AI Services account is single-region","Bug","1","1 - Critical","New","Finding: P0-001: Foundry / AI Services account is single-region
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The AI Foundry / AI Services account is provisioned only in `{primaryRegion}` with no twin in `{secondaryRegion}`. During a regional failure or GLB-driven cutover, replicas in the secondary region have no Foundry control plane to call: every agent invocation, model call, and Bing-grounding tool fails with DNS or 5xx errors. The active/active deployment delivers zero AI continuity because the upstream dependency is gone.
+
+File: infra/main.bicep:856-870
+
+```bicep
+// before — single Foundry account in one region; backend env points to the single endpoint
+module aiFoundry 'modules/ai-services.bicep' = {
+ name: 'foundry-${location}'
+ params: {
+ name: 'aif-${solutionPrefix}-${location}'
+ location: location
+ userAssignedIdentityResourceId: uami.outputs.resourceId
+ }
+}
+// Container App env: AZURE_AI_PROJECT_ENDPOINT = aiFoundry.outputs.endpoint
+```
+
+Recommended Fix: Provision a peer `Microsoft.CognitiveServices/accounts` (kind `AIServices`) in `{secondaryRegion}` with the same UAMI and connection name; replace the single `AZURE_AI_PROJECT_ENDPOINT` env var with `_PRIMARY` / `_SECONDARY` plus an `APP_REGION` per regional Container App revision; add a `resolve_foundry_endpoint()` method that prefers the local-region endpoint and falls back to the peer; surface Foundry health in `/healthz/ready`.","Provision a peer `Microsoft.CognitiveServices/accounts` (kind `AIServices`) in `{secondaryRegion}` with the same UAMI and connection name; replace the single `AZURE_AI_PROJECT_ENDPOINT` env var with `_PRIMARY` / `_SECONDARY` plus an `APP_REGION` per regional Container App revision; add a `resolve_foundry_endpoint()` method that prefers the local-region endpoint and falls back to the peer; surface Foundry health in `/healthz/ready`.","resiliency;P0-001"
+"P0-002: Foundry Project + Agent Service single-instance","Bug","1","1 - Critical","New","Finding: P0-002: Foundry Project + Agent Service single-instance
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The Foundry Project and Agent Service exist only inside the primary-region Foundry account; agent definitions, thread metadata, and the Bing-grounding connection live there. During regional failover the GLB cannot land any plan-execution traffic in `{secondaryRegion}` — even with a healthy peer Foundry account (P0-001), there is no Project or agent metadata for it to use.
+
+File: infra/main.bicep:937-960
+
+```bicep
+// before — single Project under the single Foundry account; one connection scope only
+module aiFoundryProject 'modules/ai-project.bicep' = {
+ name: 'aif-project-${location}'
+ params: {
+ parentName: aiFoundry.outputs.name
+ location: location
+ projectName: aiProjectName
+ connections: [ { name: 'binggrnd', target: bingConnectionTarget } ]
+ }
+}
+```
+
+Recommended Fix: Promote agent definitions to a versioned JSON catalog under `data/agent_teams/`; provision a peer `Microsoft.CognitiveServices/accounts/projects` under the secondary Foundry account with identical project name and connection name; add a post-deploy `deploymentScript` (or `azd hook`) that idempotently POSTs the catalog into both Projects via the Foundry SDK; ensure `AGENT_PROJECT_NAME` is identical in both regions and resolves through the regional Foundry endpoint from P0-001.","Promote agent definitions to a versioned JSON catalog under `data/agent_teams/`; provision a peer `Microsoft.CognitiveServices/accounts/projects` under the secondary Foundry account with identical project name and connection name; add a post-deploy `deploymentScript` (or `azd hook`) that idempotently POSTs the catalog into both Projects via the Foundry SDK; ensure `AGENT_PROJECT_NAME` is identical in both regions and resolves through the regional Foundry endpoint from P0-001.","resiliency;P0-002"
+"P0-003: Cosmos DB NoSQL is serverless single-region","Bug","1","1 - Critical","New","Finding: P0-003: Cosmos DB NoSQL is serverless single-region
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: Cosmos is provisioned with `EnableServerless` and a single `locations[]` entry, with `enableAutomaticFailover=false` and `enableMultipleWriteLocations=false`. During zone loss in `{primaryRegion}` or a regional outage, every read/write fails: backend replicas in `{secondaryRegion}` cannot fetch plans, persist approvals, or write checkpoints. Active/active for the data plane is not possible without migration.
+
+File: infra/main.bicep:1043-1130
+
+```bicep
+// before — serverless, single region, no automatic failover, no multi-region writes
+module cosmos 'br/public:avm/res/document-db/database-account:0.x.y' = {
+ name: 'cosmos-${solutionPrefix}'
+ params: {
+ name: 'cosmos-${solutionPrefix}'
+ locations: [ { locationName: location, failoverPriority: 0 } ]
+ capabilities: [ { name: 'EnableServerless' } ]
+ automaticFailover: false
+ enableMultipleWriteLocations: false
+ }
+}
+```
+
+Recommended Fix: Per P0-013, provision a new `Microsoft.DocumentDB/databaseAccounts` *without* serverless, with both regions in `locations[]`, multi-region writes, automatic failover, and `isZoneRedundant=true`; migrate plan/step containers via change-feed; in `cosmosdb.CosmosDBClient.__init__` pass `preferred_locations=[app_region, peer_region]`; register a Cosmos dependency probe in `HealthCheckMiddleware`.","Per P0-013, provision a new `Microsoft.DocumentDB/databaseAccounts` *without* serverless, with both regions in `locations[]`, multi-region writes, automatic failover, and `isZoneRedundant=true`; migrate plan/step containers via change-feed; in `cosmosdb.CosmosDBClient.__init__` pass `preferred_locations=[app_region, peer_region]`; register a Cosmos dependency probe in `HealthCheckMiddleware`.","resiliency;P0-003"
+"P0-004: VNet / NSG / Private DNS / PE single-region","Bug","1","1 - Critical","New","Finding: P0-004: VNet / NSG / Private DNS / PE single-region
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The VNet, NSGs, Private DNS zones, and Private Endpoints are deployed only in `{primaryRegion}`. There is no network fabric in `{secondaryRegion}` to host PEs for Cosmos, Foundry, Search, or Storage. In an active/active topology this means the secondary region's Container Apps replicas cannot resolve or reach any private dependency, so symmetric failover is structurally impossible.
+
+File: infra/main.bicep:736-754
+
+```bicep
+// Single regional network stack — only {primaryRegion} VNet, NSGs, PEs, DNS
+module network 'modules/network.bicep' = {
+ name: 'net-${location}'
+ params: {
+ location: location
+ addressPrefix: '10.10.0.0/16'
+ }
+}
+// Cosmos PE only in the primary VNet; Private DNS zone linked to one VNet only.
+```
+
+Recommended Fix: Refactor the VNet / NSG / PE module to take `location` and instantiate it twice from `main.bicep`; keep Private DNS zones as global resources and add `virtualNetworkLinks` for both regional VNets; provision per-region Private Endpoints for Cosmos, Foundry, Search, and Storage; validate `nslookup` from each region resolves to its local PE IP.","Refactor the VNet / NSG / PE module to take `location` and instantiate it twice from `main.bicep`; keep Private DNS zones as global resources and add `virtualNetworkLinks` for both regional VNets; provision per-region Private Endpoints for Cosmos, Foundry, Search, and Storage; validate `nslookup` from each region resolves to its local PE IP.","resiliency;P0-004"
+"P0-005: Single Bicep `location` parameter","Bug","1","1 - Critical","New","Finding: P0-005: Single Bicep `location` parameter
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `infra/main.bicep` exposes a single `location` parameter consumed by every module. The IaC has no concept of primary + secondary location, so it cannot describe an active/active topology at all. This blocks every other regional symmetry remediation (P0-001, P0-003, P0-004, P0-006, P0-007).
+
+File: infra/main.bicep:60
+
+```bicep
+// before — single region parameter, every module receives the same location
+param location string = resourceGroup().location
+```
+
+Recommended Fix: Add `primaryLocation` (default to RG location) and `secondaryLocation` (no default — force explicit) parameters; convert each regional module into a parameterized module instantiated twice; keep global resources (Private DNS, GLB, geo-replicated ACR, RBAC) at non-regional scope; wire `secondaryLocation` into `main.parameters.json` and `main.waf.parameters.json`.","Add `primaryLocation` (default to RG location) and `secondaryLocation` (no default — force explicit) parameters; convert each regional module into a parameterized module instantiated twice; keep global resources (Private DNS, GLB, geo-replicated ACR, RBAC) at non-regional scope; wire `secondaryLocation` into `main.parameters.json` and `main.waf.parameters.json`.","resiliency;P0-005"
+"P0-006: `azureAiServiceLocation` pins single Foundry account","Bug","1","1 - Critical","New","Finding: P0-006: `azureAiServiceLocation` pins single Foundry account
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The `azureAiServiceLocation` parameter feeds a single Foundry account; all OpenAI deployments inherit that location. During regional failover, OpenAI chat/embedding calls from `{secondaryRegion}` resolve to the dead primary, so plan generation and approval flows fail end-to-end. No model means no agent — the active/active deployment delivers no AI value.
+
+File: infra/main.bicep:937-960
+
+```bicep
+// before — single location parameter pins all model deployments to one region
+param azureAiServiceLocation string
+
+module openAi 'modules/ai-services-deployments.bicep' = {
+ name: 'oai-${azureAiServiceLocation}'
+ params: { parentName: aiFoundry.outputs.name, deployments: openAiDeployments, location: azureAiServiceLocation }
+}
+```
+
+Recommended Fix: Replace `azureAiServiceLocation` with `azureAiServicePrimaryLocation` and `azureAiServiceSecondaryLocation`; pre-validate model + capacity quota in both regions (`az cognitiveservices usage list`); deploy identical model deployments (same name, version, capacity) into both Foundry accounts; route OpenAI calls through `app_config.resolve_foundry_endpoint()` from P0-001.","Replace `azureAiServiceLocation` with `azureAiServicePrimaryLocation` and `azureAiServiceSecondaryLocation`; pre-validate model + capacity quota in both regions (`az cognitiveservices usage list`); deploy identical model deployments (same name, version, capacity) into both Foundry accounts; route OpenAI calls through `app_config.resolve_foundry_endpoint()` from P0-001.","resiliency;P0-006"
+"P0-007: `enableRedundancy=false` default","Bug","1","1 - Critical","New","Finding: P0-007: `enableRedundancy=false` default
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `enableRedundancy` defaults to `false` and is not threaded through every AVM module. With the flag off, a single-zone failure inside either `{primaryRegion}` or `{secondaryRegion}` knocks out App Service Plan, Container Apps Env, Storage, and Cosmos in that region. Active/active only delivers value if each region also survives a zone loss; without zone-redundant defaults, a single zonal incident defeats the GLB's ability to keep the region in rotation.
+
+File: infra/main.bicep:80
+
+```bicep
+// before — redundancy off by default; flag never reaches storage / Cosmos / plans
+param enableRedundancy bool = false
+```
+
+Recommended Fix: Flip the default to `true`; thread `enableRedundancy` into App Service Plan (`zoneRedundant`), Container Apps Env, Storage (`Standard_GZRS`), and Cosmos per-`locations[]`; validate at deploy time that each chosen region has at least 3 availability zones and fail the deployment otherwise.","Flip the default to `true`; thread `enableRedundancy` into App Service Plan (`zoneRedundant`), Container Apps Env, Storage (`Standard_GZRS`), and Cosmos per-`locations[]`; validate at deploy time that each chosen region has at least 3 availability zones and fail the deployment otherwise.","resiliency;P0-007"
+"P0-008: Orchestration uses InMemoryCheckpointStorage","Bug","1","1 - Critical","New","Finding: P0-008: Orchestration uses InMemoryCheckpointStorage
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `OrchestrationConfig` constructs an `InMemoryCheckpointStorage` per process, so plan checkpoints live only in the replica that started them. Under a single-region topology a pod restart already loses in-flight checkpoints; once the deployment is active/active across `{primaryRegion}` and `{secondaryRegion}`, GLB cutover or replica failover deterministically destroys every in-flight checkpoint because the peer replicas have no shared store to read from.
+
+File: src/backend/v4/orchestration/orchestration_config.py:1-50
+
+```python
+# before
+class OrchestrationConfig:
+ def __init__(self) -> None:
+ self.checkpoint_storage = InMemoryCheckpointStorage()
+```
+
+Recommended Fix: Replace `InMemoryCheckpointStorage` with a Cosmos-backed `CheckpointStorage` keyed by `plan_id`, partitioned on `/plan_id`, with `_etag` optimistic concurrency, and run a startup recovery scan that re-drives `in_progress` plans owned by a dead replica.","Replace `InMemoryCheckpointStorage` with a Cosmos-backed `CheckpointStorage` keyed by `plan_id`, partitioned on `/plan_id`, with `_etag` optimistic concurrency, and run a startup recovery scan that re-drives `in_progress` plans owned by a dead replica.","resiliency;P0-008"
+"P0-009: Pre-approval MPlan held in `asyncio.Event`","Bug","1","1 - Critical","New","Finding: P0-009: Pre-approval MPlan held in `asyncio.Event`
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `HumanApprovalMagenticManager` keeps the pending `MPlan` in a process-local dict and waits on an `asyncio.Event` for approval. In a single-region deployment a pod restart already strands the awaiting coroutine; in active/active across `{primaryRegion}` and `{secondaryRegion}` the GLB routinely routes the approval call to a different replica or region than the one that generated the plan, so the awaiting coroutine never resumes and the user sees 404.
+
+File: src/backend/v4/orchestration/human_approval_manager.py:1-90
+
+```python
+# before
+class HumanApprovalMagenticManager:
+ def __init__(self) -> None:
+ self._pending: dict[str, MPlan] = {}
+ self._events: dict[str, asyncio.Event] = {}
+
+ async def request_approval(self, plan: MPlan) -> bool:
+ self._pending[plan.plan_id] = plan
+ ev = self._events.setdefault(plan.plan_id, asyncio.Event())
+ await ev.wait() # never resumes on a different replica
+ return self._decisions[plan.plan_id]
+```
+
+Recommended Fix: Persist the pending plan and its approval state in a Cosmos `approvals` container partitioned by `/plan_id`; replace `event.wait()` with a bounded poll (or change-feed subscription) and apply approvals via `_etag` compare-and-set with an idempotency key.","Persist the pending plan and its approval state in a Cosmos `approvals` container partitioned by `/plan_id`; replace `event.wait()` with a bounded poll (or change-feed subscription) and apply approvals via `_etag` compare-and-set with an idempotency key.","resiliency;P0-009"
+"P0-010: WebSocket connection map is in-memory","Bug","1","1 - Critical","New","Finding: P0-010: WebSocket connection map is in-memory
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `ConnectionConfig` keeps `{user_id: WebSocket}` in a process-local dict. Tokens emitted by the orchestrator running on replica A only reach sockets attached to replica A. In single-region this is hidden by sticky load balancing; under active/active across `{primaryRegion}` and `{secondaryRegion}` the orchestrator and the WebSocket land on different replicas (or different regions) on most requests, so live agent output is silently lost.
+
+File: src/backend/v4/api/connection_config.py:1-60
+
+```python
+# before
+class ConnectionConfig:
+ def __init__(self) -> None:
+ self._sockets: dict[str, WebSocket] = {}
+
+ async def emit(self, user_id: str, event: dict) -> None:
+ ws = self._sockets.get(user_id) # only finds sockets on this replica
+ if ws is not None:
+ await ws.send_json(event)
+```
+
+Recommended Fix: Introduce a pub/sub backplane (Service Bus topic with geo-DR pair, or Web PubSub) authenticated via Managed Identity. Each replica subscribes per-user (or with a `user_id` correlation filter) and forwards events to its locally connected sockets; never emit directly to the in-memory dict.","Introduce a pub/sub backplane (Service Bus topic with geo-DR pair, or Web PubSub) authenticated via Managed Identity. Each replica subscribes per-user (or with a `user_id` correlation filter) and forwards events to its locally connected sockets; never emit directly to the in-memory dict.","resiliency;P0-010"
+"P0-011: BackgroundTasks orphans `in_progress` plans","Bug","1","1 - Critical","New","Finding: P0-011: BackgroundTasks orphans `in_progress` plans
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The plan-execution route hands orchestration to FastAPI `BackgroundTasks`, which runs in the same process as the request handler. Single-region pod restarts already orphan in-flight plans; with active/active across `{primaryRegion}` and `{secondaryRegion}`, scale-in events, revision rollouts, and GLB drains routinely kill the loop, leaving plans stuck at `status='in_progress'` with no driver in either region.
+
+File: src/backend/v4/api/router.py:368-371
+
+```python
+# before
+@router.post(""/api/v4/plans"")
+async def create_plan(req: CreatePlanRequest, background_tasks: BackgroundTasks):
+ plan = await plans.create(req)
+ background_tasks.add_task(run_plan, plan.plan_id) # dies with the worker
+ return plan
+```
+
+Recommended Fix: Replace `BackgroundTasks.add_task(...)` with an enqueue to a Service Bus queue (sessions enabled, partitioned by `plan_id`). Run an `OrchestrationWorker` per replica that consumes with peek-lock and completes only on terminal status. Add a startup recovery scan that re-enqueues orphaned `in_progress` plans whose lease is expired.","Replace `BackgroundTasks.add_task(...)` with an enqueue to a Service Bus queue (sessions enabled, partitioned by `plan_id`). Run an `OrchestrationWorker` per replica that consumes with peek-lock and completes only on terminal status. Add a startup recovery scan that re-enqueues orphaned `in_progress` plans whose lease is expired.","resiliency;P0-011"
+"P0-012: Approval / clarification routes lack idempotency keys","Bug","1","1 - Critical","New","Finding: P0-012: Approval / clarification routes lack idempotency keys
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: Approval and clarification endpoints mutate plan state without an `Idempotency-Key` header or `_etag` precondition. Single-region 5xx retries can already produce double-applied approvals; in active/active across `{primaryRegion}` and `{secondaryRegion}`, GLB probe-driven re-routing and cross-region client retries multiply the duplicate-write surface, so the same approval can be applied twice or race against a rejection from a peer replica.
+
+File: src/backend/v4/api/router.py:450-528
+
+```python
+# before — no idempotency key, no etag CAS
+@router.post(""/api/v4/plans/{plan_id}/approve"")
+async def approve(plan_id: str, body: ApproveRequest):
+ rec = await approvals.read_item(item=plan_id, partition_key=plan_id)
+ rec[""status""] = ""approved""
+ await approvals.replace_item(item=plan_id, body=rec) # last-write-wins
+ return {""status"": ""approved""}
+```
+
+Recommended Fix: Require an `Idempotency-Key` header on every mutating route; atomically write `{idem_key, decision_response}` to the `approvals` Cosmos record on first call; on replay, return the cached response without mutation. Apply changes via `MatchConditions.IfNotModified` against the document `_etag`.","Require an `Idempotency-Key` header on every mutating route; atomically write `{idem_key, decision_response}` to the `approvals` Cosmos record on first call; on replay, return the cached response without mutation. Apply changes via `MatchConditions.IfNotModified` against the document `_etag`.","resiliency;P0-012"
+"P0-013: Cosmos serverless cannot be promoted in place","Bug","1","1 - Critical","New","Finding: P0-013: Cosmos serverless cannot be promoted in place
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The Cosmos account is created with `capabilities: [{ name: 'EnableServerless' }]`. Serverless accounts cannot be converted to provisioned, cannot enable multi-region writes, and cannot add additional regions — every path to active/active requires a one-way migration to a *new* provisioned account. Until this migration happens, P0-003 / P0-014 / P0-015 cannot be remediated and `{secondaryRegion}` Container Apps replicas have no Cosmos peer.
+
+File: infra/main.bicep:1043-1130
+
+```bicep
+// before — serverless capability blocks geo-replication; no autoscale; no zone redundancy
+module cosmos 'br/public:avm/res/document-db/database-account:0.x.y' = {
+ name: 'cosmos-${solutionPrefix}'
+ params: {
+ name: 'cosmos-${solutionPrefix}'
+ locations: [ { locationName: location, failoverPriority: 0 } ]
+ capabilities: [ { name: 'EnableServerless' } ]
+ }
+}
+```
+
+Recommended Fix: Provision a new `Microsoft.DocumentDB/databaseAccounts` (`cosmos-${solutionPrefix}-mr`) without serverless, with multi-region writes, automatic failover, and `isZoneRedundant=true` per location; configure throughput at the *container* level (`autoscaleMaxThroughput`); use the change feed (or Data Factory) to copy data; cut readers over first, then writers; decommission the serverless account only after a 7-day soak; ensure `disableLocalAuth=true` so no key-based auth surface is reintroduced.","Provision a new `Microsoft.DocumentDB/databaseAccounts` (`cosmos-${solutionPrefix}-mr`) without serverless, with multi-region writes, automatic failover, and `isZoneRedundant=true` per location; configure throughput at the *container* level (`autoscaleMaxThroughput`); use the change feed (or Data Factory) to copy data; cut readers over first, then writers; decommission the serverless account only after a 7-day soak; ensure `disableLocalAuth=true` so no key-based auth surface is reintroduced.","resiliency;P0-013"
+"P0-014: Cosmos unavailable / regional outage unhandled (F1)","Bug","1","1 - Critical","New","Finding: P0-014: Cosmos unavailable / regional outage unhandled (F1)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `CosmosDBClient.__init__` constructs a `CosmosClient` with no `preferred_locations`, no retry policy, and no circuit-breaker. When `{primaryRegion}` Cosmos goes down, every request raises `ServiceRequestError` / `ServiceResponseError` and bubbles to callers as 500. Even with the multi-region account from P0-003 in place, the client never *uses* `{secondaryRegion}` because it is not in the preferred list — active/active does not engage.
+
+File: src/backend/common/database/cosmosdb.py:71-73
+
+```python
+# before — no preferred_locations, no retry, generic exceptions, no health flag
+class CosmosDBClient:
+ def __init__(self, endpoint: str) -> None:
+ self._client = CosmosClient(url=endpoint, credential=DefaultAzureCredential())
+
+ async def read_item(self, container: str, item: str, pk: str):
+ return await self._container(container).read_item(item=item, partition_key=pk)
+```
+
+Recommended Fix: Pass `preferred_locations=[app_region, peer_region]`; configure `retry_total=3` and `retry_backoff_factor=0.25`; wrap each operation in `_with_retry` that distinguishes 503 (retry) from 429 (cross-ref P0-015) from 4xx (no retry); register a Cosmos probe in `HealthCheckMiddleware` issuing a 1-RU read against a known partition; never introduce an `account_key` overload as a ""fallback"".","Pass `preferred_locations=[app_region, peer_region]`; configure `retry_total=3` and `retry_backoff_factor=0.25`; wrap each operation in `_with_retry` that distinguishes 503 (retry) from 429 (cross-ref P0-015) from 4xx (no retry); register a Cosmos probe in `HealthCheckMiddleware` issuing a 1-RU read against a known partition; never introduce an `account_key` overload as a ""fallback"".","resiliency;P0-014"
+"P0-015: Cosmos 429 RU throttling unhandled (F2)","Bug","1","1 - Critical","New","Finding: P0-015: Cosmos 429 RU throttling unhandled (F2)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The Cosmos wrapper catches a generic `Exception` and logs it; HTTP 429 (`x-ms-retry-after-ms`) is not differentiated from 503 or transport errors. During a GLB cutover, the surviving region absorbs both regions' workload; RU consumption spikes, Cosmos sheds load with 429, and every shed request becomes a user-visible 500. Without honoring `x-ms-retry-after-ms`, the wrapper retries immediately (cascading the throttle) or not at all.
+
+File: src/backend/common/database/cosmosdb.py:110-176
+
+```python
+# before — generic exception swallow; 429 retried immediately or not at all
+async def read_item(self, container: str, item: str, pk: str):
+ try:
+ return await self._container(container).read_item(item=item, partition_key=pk)
+ except Exception as ex:
+ log.error(""cosmos read_item failed: %s"", ex)
+ raise
+```
+
+Recommended Fix: Replace `except Exception` with `except CosmosHttpResponseError` and branch on `ex.status_code`; on 429, parse `ex.headers[""x-ms-retry-after-ms""]` (fallback 100ms), sleep, and retry up to 5 attempts within a 10s budget; emit `cosmos.throttled` and `cosmos.ru_charge` metrics; do not flip readiness on throttling — backpressure is not an outage.","Replace `except Exception` with `except CosmosHttpResponseError` and branch on `ex.status_code`; on 429, parse `ex.headers[""x-ms-retry-after-ms""]` (fallback 100ms), sleep, and retry up to 5 attempts within a 10s budget; emit `cosmos.throttled` and `cosmos.ru_charge` metrics; do not flip readiness on throttling — backpressure is not an outage.","resiliency;P0-015"
+"P0-016: OpenAI 5xx / regional outage unhandled (F5)","Bug","1","1 - Critical","New","Finding: P0-016: OpenAI 5xx / regional outage unhandled (F5)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `HumanApprovalMagenticManager` calls Azure OpenAI through the Foundry Project with no 5xx-aware retry and no fallback endpoint. During an OpenAI regional outage in `{primaryRegion}` (503s, capacity exhaustion, model rollover), every plan-generation call fails. Even with the peer Foundry account from P0-001 deployed, this code path never tries it, so active/active delivers no AI continuity at runtime.
+
+File: src/backend/v4/orchestration/human_approval_manager.py:114-141
+
+```python
+# before — single endpoint, no retry, no fallback
+class HumanApprovalMagenticManager:
+ def __init__(self, app_config: AppConfig) -> None:
+ self._client = AsyncAzureOpenAI(
+ azure_endpoint=app_config.openai_endpoint,
+ api_key=app_config.openai_api_key,
+ api_version=""2025-04-01-preview"",
+ )
+
+ async def generate_plan(self, prompt: str) -> MPlan:
+ resp = await self._client.chat.completions.create(
+ model=""gpt-4.1-mini"",
+ messages=[{""role"": ""user"", ""content"": prompt}],
+ )
+ return MPlan.from_response(resp)
+```
+
+Recommended Fix: Wrap OpenAI calls in `tenacity` with `stop_after_attempt(3)` and `wait_exponential_jitter(initial=0.5, max=4)`, retrying only on 5xx and connection errors; on exhaustion, call `app_config.mark_foundry_unhealthy(local_region)`, build a client against the peer endpoint, and retry once; emit `openai.failover from=… to=… reason=…` per cutover; never introduce an `AZURE_OPENAI_API_KEY` env var as a ""fallback"" — token auth via `DefaultAzureCredential` only.","Wrap OpenAI calls in `tenacity` with `stop_after_attempt(3)` and `wait_exponential_jitter(initial=0.5, max=4)`, retrying only on 5xx and connection errors; on exhaustion, call `app_config.mark_foundry_unhealthy(local_region)`, build a client against the peer endpoint, and retry once; emit `openai.failover from=… to=… reason=…` per cutover; never introduce an `AZURE_OPENAI_API_KEY` env var as a ""fallback"" — token auth via `DefaultAzureCredential` only.","resiliency;P0-016"
+"P0-017: Foundry / AI Project unavailable unhandled (F6)","Bug","1","1 - Critical","New","Finding: P0-017: Foundry / AI Project unavailable unhandled (F6)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `app_config` resolves the Foundry / AI Project endpoint once at process startup and caches it for the life of the replica. There is no health probe and no re-resolution on transient failure. If Foundry in `{primaryRegion}` becomes unavailable after startup, every agent invocation continues to dial the dead endpoint until the replica is restarted, the peer endpoint (P0-001) is never consulted, and `/healthz/ready` keeps returning 200 because nothing observes Foundry's state. Active/active never engages.
+
+File: src/backend/common/config/app_config.py:244-269
+
+```python
+# before — endpoint resolved once at startup; no probe, no re-resolution
+class AppConfig:
+ def __init__(self) -> None:
+ self.credential = DefaultAzureCredential()
+ self._project = AIProjectClient(
+ endpoint=os.environ[""AZURE_AI_PROJECT_ENDPOINT""],
+ credential=self.credential,
+ )
+
+ def get_ai_project_client(self) -> AIProjectClient:
+ return self._project # cached for life of process
+```
+
+Recommended Fix: Replace the cached `Project` instance with an `AzureAIClient` factory that calls `app_config.resolve_foundry_endpoint()` per call; add a `_FoundryProbe` background task (15s interval) that hits `GET /openai/models` against the local endpoint and calls `mark_foundry_unhealthy(local_region)` on 5xx/timeout; mark the region healthy again after 4 consecutive successes (60s); start the task in the FastAPI lifespan hook; surface `foundry.local` / `foundry.peer` flags in the readiness payload.","Replace the cached `Project` instance with an `AzureAIClient` factory that calls `app_config.resolve_foundry_endpoint()` per call; add a `_FoundryProbe` background task (15s interval) that hits `GET /openai/models` against the local endpoint and calls `mark_foundry_unhealthy(local_region)` on 5xx/timeout; mark the region healthy again after 4 consecutive successes (60s); start the task in the FastAPI lifespan hook; surface `foundry.local` / `foundry.peer` flags in the readiness payload.","resiliency;P0-017"
+"P0-018: WebSocket disconnect / replica failover (F12)","Bug","1","1 - Critical","New","Finding: P0-018: WebSocket disconnect / replica failover (F12)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: WebSocket disconnects from replica scaling, GLB cutover, or transient network blips drop the user's session with no reconnect protocol and no message replay. In single-region this manifests as occasional UI staleness; in active/active across `{primaryRegion}` and `{secondaryRegion}` the cutover deterministically severs every WebSocket, and the reconnecting client lands on a different replica with no offset tracking — so the new replica either replays everything (duplicates) or nothing (gaps).
+
+File: src/backend/v4/api/connection_config.py:1-60
+
+```python
+# before — emits to local socket only, no seq, no replay
+async def emit(self, user_id: str, event: dict) -> None:
+ ws = self._sockets.get(user_id)
+ if ws is not None:
+ await ws.send_json(event)
+```
+
+Recommended Fix: Tag every outbound event with a monotonic per-user `seq`; persist `last_acked_seq` per `user_id` in a Cosmos `connections` container; on reconnect, accept `?since=<seq>` and replay from the backplane subscription starting at `since+1`. Pair with P0-010 backplane.","Tag every outbound event with a monotonic per-user `seq`; persist `last_acked_seq` per `user_id` in a Cosmos `connections` container; on reconnect, accept `?since=<seq>` and replay from the backplane subscription starting at `since+1`. Pair with P0-010 backplane.","resiliency;P0-018"
+"P0-019: Pod restart mid-orchestration (F13)","Bug","1","1 - Critical","New","Finding: P0-019: Pod restart mid-orchestration (F13)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: Replicas restart for routine deploys, revision rollouts, scale-in, zone loss, and GLB drains. Because plan execution lives in `BackgroundTasks` (P0-011) and checkpoints live in process memory (P0-008), a restart kills the loop and leaves the plan at `in_progress` with no driver. Active/active across `{primaryRegion}` and `{secondaryRegion}` makes replica churn the common case rather than the edge case.
+
+File: src/backend/app.py:108
+
+```python
+# before — no recovery scan; restarts strand plans permanently
+app = FastAPI()
+app.add_middleware(HealthCheckMiddleware, checks={}, password="""")
+```
+
+Recommended Fix: In the FastAPI lifespan hook, call `checkpoint_storage.list_in_progress()`, evaluate each plan's lease (via `heartbeat_ts`), and re-enqueue stale ones onto the durable runner from P0-011. Set `app.state.recovery_complete=True` only after the scan finishes; gate `/healthz/ready` on the flag.","In the FastAPI lifespan hook, call `checkpoint_storage.list_in_progress()`, evaluate each plan's lease (via `heartbeat_ts`), and re-enqueue stale ones onto the durable runner from P0-011. Set `app.state.recovery_complete=True` only after the scan finishes; gate `/healthz/ready` on the flag.","resiliency;P0-019"
+"P0-020: Approval / clarification 404 after restart (F14)","Bug","1","1 - Critical","New","Finding: P0-020: Approval / clarification 404 after restart (F14)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: After a replica restart, the in-memory pending approval entry held by `HumanApprovalMagenticManager` is gone, so approval routes return 404 even though the plan exists in Cosmos. Single-region deploys already exhibit this on rollout; in active/active across `{primaryRegion}` and `{secondaryRegion}`, the GLB routinely routes the approval to a replica or region that never held the dict entry, so legitimate approvals fail with 404.
+
+File: src/backend/v4/api/router.py:450-528
+
+```python
+# before — relies on in-memory dict that vanishes on restart
+@router.get(""/api/v4/plans/{plan_id}/approval"")
+async def get_approval(plan_id: str):
+ if plan_id not in approval_manager.pending:
+ raise HTTPException(404) # 404 even if the plan is in Cosmos
+ return approval_manager.pending[plan_id]
+```
+
+Recommended Fix: Persist the awaiting state in the Cosmos `approvals` container (P0-009) and reconstruct on lookup. Combine with idempotency from P0-012 — duplicate `Idempotency-Key` returns the prior decision response; conflicting CAS returns 409, never 404.","Persist the awaiting state in the Cosmos `approvals` container (P0-009) and reconstruct on lookup. Combine with idempotency from P0-012 — duplicate `Idempotency-Key` returns the prior decision response; conflicting CAS returns 409, never 404.","resiliency;P0-020"
+"P0-021: `/healthz` returns healthy regardless of dependency state","Bug","1","1 - Critical","New","Finding: P0-021: `/healthz` returns healthy regardless of dependency state
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `HealthCheckMiddleware` is registered with an empty `checks={}` dict, so `/healthz` returns 200 regardless of Cosmos, Foundry, OpenAI, Search, Storage, MCP, or Service Bus state. In single-region this is misleading; once `{primaryRegion}` and `{secondaryRegion}` run active/active behind a GLB, the probe cannot tell a poisoned region from a healthy one — a dead `{primaryRegion}` keeps advertising success and the GLB keeps splitting traffic into a black hole.
+
+File: src/backend/middleware/health_check.py:24-30
+
+```python
+# before — empty registry returns 200 for everything
+class HealthCheckMiddleware:
+ def __init__(self, app, checks: dict = None, password: str = """") -> None:
+ self.app = app
+ self._checks = checks or {} # always empty in app.py:108
+
+ async def healthz(self) -> tuple[int, dict]:
+ return 200, {""status"": ""ok""} # synthetic OK regardless of state
+```
+
+Recommended Fix: Build a `DependencyProbe` registry; split `/healthz/live` (process liveness) from `/healthz/ready` (dependency readiness); register Cosmos, Foundry, OpenAI, Service Bus, MCP, and JWKS as `critical=True`; cache probe results ~2s and run them concurrently with a 2s per-probe timeout. Wire the GLB origin probe to `/healthz/ready` only.","Build a `DependencyProbe` registry; split `/healthz/live` (process liveness) from `/healthz/ready` (dependency readiness); register Cosmos, Foundry, OpenAI, Service Bus, MCP, and JWKS as `critical=True`; cache probe results ~2s and run them concurrently with a 2s per-probe timeout. Wire the GLB origin probe to `/healthz/ready` only.","resiliency;P0-021"
+"P0-022: External ACR `biabcontainerreg.azurecr.io`","Bug","1","1 - Critical","New","Finding: P0-022: External ACR `biabcontainerreg.azurecr.io`
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: Container Apps and the App Service pull the runtime image from `biabcontainerreg.azurecr.io` — a Microsoft-owned shared registry not under customer control. During an outage of that single-region registry (or a network partition between either customer region and that hostname), cold-start of new replicas fails in `{primaryRegion}` and `{secondaryRegion}` simultaneously. An active/active topology that depends on a single shared external registry is not actually active/active.
+
+File: infra/main.bicep:140-160
+
+```bicep
+// before — image pinned to an external Microsoft-owned registry
+var backendImage = 'biabcontainerreg.azurecr.io/macae/backend:latest'
+// ...
+properties: {
+ template: {
+ containers: [ { name: 'backend', image: backendImage } ]
+ }
+}
+```
+
+Recommended Fix: Provision a Premium ACR with `replications` for both regions and `adminUserEnabled=false`; grant the workload UAMI `AcrPull` on the registry; mirror the upstream image as part of the `azd` pre-provision hook; replace every `biabcontainerreg.azurecr.io/...` literal with `${containerRegistryHostname}/...` sourced from the new ACR's `loginServer`; add a CI grep gate that fails the build if the external hostname reappears.","Provision a Premium ACR with `replications` for both regions and `adminUserEnabled=false`; grant the workload UAMI `AcrPull` on the registry; mirror the upstream image as part of the `azd` pre-provision hook; replace every `biabcontainerreg.azurecr.io/...` literal with `${containerRegistryHostname}/...` sourced from the new ACR's `loginServer`; add a CI grep gate that fails the build if the external hostname reappears.","resiliency;P0-022"
+"P0-023: Jumpbox admin password fallback literal","Bug","1","1 - Critical","New","Finding: P0-023: Jumpbox admin password fallback literal
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The jumpbox VM's admin password has a hard-coded literal default (`JumpboxAdminP@ssw0rd1234!`) baked into `infra/main.bicep` and the compiled `infra/main.json`. Any deployer who runs `azd provision` without overriding the parameter creates a privileged VM with a known credential. When the WAF layout is symmetrically deployed to `{secondaryRegion}` (P0-004, P0-005), the same literal is replicated — doubling the blast radius — and many tenants' regional policy rejects plaintext passwords outright, so the secondary region cannot stand up cleanly for active/active.
+
+File: infra/main.bicep:619-620
+
+```bicep
+// before — hard-coded password literal in source control
+param vmAdminPassword string = 'JumpboxAdminP@ssw0rd1234!'
+```
+
+Recommended Fix: Delete the literal default; decorate the parameter with `@secure()` and remove any default value; source the value from Key Vault via `keyVault.id` + `secretName` syntax in `main.parameters.json`; rotate the compromised credential for every environment where this template was deployed; rebuild `infra/main.json` from the cleaned Bicep; add a CI gitleaks gate that fails on the literal substring `JumpboxAdminP@ssw0rd`.","Delete the literal default; decorate the parameter with `@secure()` and remove any default value; source the value from Key Vault via `keyVault.id` + `secretName` syntax in `main.parameters.json`; rotate the compromised credential for every environment where this template was deployed; rebuild `infra/main.json` from the cleaned Bicep; add a CI gitleaks gate that fails on the literal substring `JumpboxAdminP@ssw0rd`.","resiliency;P0-023"
+"P0-024: No GLB / Front Door / App Gateway / Traffic Manager","Bug","1","1 - Critical","New","Finding: P0-024: No GLB / Front Door / App Gateway / Traffic Manager
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The IaC contains no Front Door, Traffic Manager, Application Gateway, or CDN profile. Even after `{primaryRegion}` and `{secondaryRegion}` are stood up symmetrically (P0-001 through P0-007), there is no global routing layer in front to fail traffic over. Clients resolve a single regional FQDN, so a region outage is a full outage and the active/active control plane built by every other P0 finding has no decision-maker to act on the readiness signal from P0-021.
+
+File: infra/modules/global-load-balancer.bicep (absent)
+
+```bicep
+// before — no Front Door, Traffic Manager, App Gateway, or CDN profile in infra/.
+// Clients resolve a single regional Container App FQDN. No failover layer exists.
+```
+
+Recommended Fix: Add a `Microsoft.Cdn/profiles` (Front Door Premium) at global scope with one `afdEndpoints` child per surface; create `originGroups` with `healthProbeSettings` pointing at `GET /healthz/ready` (HTTPS, 5s interval, 2s timeout); add two `origins` per group (`priority: 1` primary, `priority: 2` secondary); attach a WAF policy in Prevention mode; bind a custom domain via `afdCustomDomains` with a managed certificate; lock origin ingress to Front Door only (Private Link origin or `X-Azure-FDID` header validation).","Add a `Microsoft.Cdn/profiles` (Front Door Premium) at global scope with one `afdEndpoints` child per surface; create `originGroups` with `healthProbeSettings` pointing at `GET /healthz/ready` (HTTPS, 5s interval, 2s timeout); add two `origins` per group (`priority: 1` primary, `priority: 2` secondary); attach a WAF policy in Prevention mode; bind a custom domain via `afdCustomDomains` with a managed certificate; lock origin ingress to Front Door only (Private Link origin or `X-Azure-FDID` header validation).","resiliency;P0-024"
+"P0-025: `/healthz` registered with `checks={}` (implementation evidence; cross-ref P0-021)","Bug","1","1 - Critical","New","Finding: P0-025: `/healthz` registered with `checks={}` (implementation evidence; cross-ref P0-021)
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: `app.add_middleware(HealthCheckMiddleware, checks={}, password="""")` registers the middleware with an empty probe dict and an empty-string password literal. The dict short-circuits to 200 and the password literal is a dead artifact. Active/active across `{primaryRegion}` and `{secondaryRegion}` makes this fatal: the GLB has no truthful per-region signal to drive failover, so an unhealthy region continues to receive 50% of traffic indefinitely.
+
+File: src/backend/app.py:108
+
+```python
+# before — synthetic OK with empty-string password literal
+app.add_middleware(HealthCheckMiddleware, checks={}, password="""")
+```
+
+Recommended Fix: Delete the `checks={}` and `password=""""` arguments. Build a `probes` dict from the live dependency clients (no fresh client construction), mark Cosmos/Foundry/OpenAI/Service Bus/MCP as `critical=True`, mark Search/Storage as `critical=False`, and pass it to `HealthCheckMiddleware`.","Delete the `checks={}` and `password=""""` arguments. Build a `probes` dict from the live dependency clients (no fresh client construction), mark Cosmos/Foundry/OpenAI/Service Bus/MCP as `critical=True`, mark Search/Storage as `critical=False`, and pass it to `HealthCheckMiddleware`.","resiliency;P0-025"
+"P0-026: Backend has no auth enforcement at Container App ingress","Bug","1","1 - Critical","New","Finding: P0-026: Backend has no auth enforcement at Container App ingress
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The backend Container App exposes `ingressExternal=true` with no `authConfigs` resource and no JWT validation in FastAPI. The app trusts whatever Easy Auth headers it receives, but Easy Auth is not configured, so unauthenticated traffic reaches route handlers directly and the principal is whatever the request claims. Once the GLB exposes the backend from both `{primaryRegion}` and `{secondaryRegion}`, the public attack surface doubles, and the Front Door origin can be bypassed if attackers find either Container App FQDN.
+
+File: src/backend/app.py:99-109
+
+```python
+# before — no auth middleware; ingress accepts anonymous requests
+app = FastAPI()
+app.add_middleware(HealthCheckMiddleware, checks={}, password="""")
+# (no AuthMiddleware; sample_user fallback fills request.state.principal)
+```
+
+Recommended Fix: Add a `Microsoft.App/containerApps/authConfigs` (Easy Auth v2) child to each regional backend with `unauthenticatedClientAction='Return401'`, configure Entra ID issuer/audience from Bicep params, allow-list `/healthz/live` and `/healthz/ready`, and add a FastAPI `AuthMiddleware` that re-validates the bearer token against JWKS and rejects when no principal resolves (no fallback).","Add a `Microsoft.App/containerApps/authConfigs` (Easy Auth v2) child to each regional backend with `unauthenticatedClientAction='Return401'`, configure Entra ID issuer/audience from Bicep params, allow-list `/healthz/live` and `/healthz/ready`, and add a FastAPI `AuthMiddleware` that re-validates the bearer token against JWKS and rejects when no principal resolves (no fallback).","resiliency;P0-026"
+"P0-027: `sample_user` all-zeros principal fallback","Bug","1","1 - Critical","New","Finding: P0-027: `sample_user` all-zeros principal fallback
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: When `X-Ms-Client-Principal` is missing, `auth_utils` returns a `sample_user` whose `oid` and `tid` are `00000000-0000-0000-0000-000000000000`. That synthetic id is used as the Cosmos partition key for plans, approvals, and connections. In a single-region deployment this already silently authorizes anonymous callers; in active/active across `{primaryRegion}` and `{secondaryRegion}`, every region exposes the same fallback, so the synthetic principal is uniformly privileged in both regions and cross-tenant data isolation collapses across the failover topology.
+
+File: src/backend/auth/sample_user.py:32
+
+```python
+# before — anonymous request becomes a privileged synthetic user
+def get_authenticated_user_details(request_headers):
+ header = request_headers.get(""X-Ms-Client-Principal"")
+ if header is None:
+ return sample_user.sample_user # all-zeros oid/tid fallback
+ return _decode_easy_auth_header(header)
+
+# src/backend/auth/sample_user.py:32
+sample_user = {
+ ""oid"": ""00000000-0000-0000-0000-000000000000"",
+ ""tid"": ""00000000-0000-0000-0000-000000000000"",
+}
+```
+
+Recommended Fix: Delete the `sample_user` fallback from `get_authenticated_user_details()`; raise `AuthError(""missing_principal"")` instead. Move the `sample_user` literal into a test-only fixture under `src/tests/`. Audit Cosmos for documents whose `user_id` is the all-zeros oid and quarantine them. Add a regression grep that fails the build if `00000000-0000-0000-0000-000000000000` appears in `src/backend/`.","Delete the `sample_user` fallback from `get_authenticated_user_details()`; raise `AuthError(""missing_principal"")` instead. Move the `sample_user` literal into a test-only fixture under `src/tests/`. Audit Cosmos for documents whose `user_id` is the all-zeros oid and quarantine them. Add a regression grep that fails the build if `00000000-0000-0000-0000-000000000000` appears in `src/backend/`.","resiliency;P0-027"
+"P0-028: MCP server runs unauthenticated when `enable_auth=True` but JWKS/issuer/audience env vars are unset","Bug","1","1 - Critical","New","Finding: P0-028: MCP server runs unauthenticated when `enable_auth=True` but JWKS/issuer/audience env vars are unset
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The MCP server reads `MCP_ENABLE_AUTH` and JWKS settings from env; when `enable_auth=True` but `JWKS_URI`, `MCP_ISSUER`, or `MCP_AUDIENCE` is unset, the current code logs a warning and starts anyway with auth effectively disabled. Active/active across `{primaryRegion}` and `{secondaryRegion}` makes env drift between regional Container Apps inevitable — if one region is missing an env var, the GLB happily routes MCP traffic into the open instance because nothing detects the misconfiguration.
+
+File: src/mcp_server/mcp_server.py:31-52
+
+```python
+# before — warns and continues with auth effectively off
+def _validate_auth_config() -> None:
+ enabled = os.environ.get(""MCP_ENABLE_AUTH"", ""false"").lower() == ""true""
+ if not enabled:
+ return
+ missing = [k for k in (""JWKS_URI"", ""MCP_ISSUER"", ""MCP_AUDIENCE"") if not os.environ.get(k)]
+ if missing:
+ log.warning(""mcp.auth.misconfigured missing=%s — starting unauthenticated"", missing)
+ return # fails open
+```
+
+Recommended Fix: Replace the warn-and-continue branch with `sys.exit(1)` when `MCP_ENABLE_AUTH=true` and any required env var is missing. Default `MCP_ENABLE_AUTH=true` in IaC for both regional MCP Container Apps. Add a startup self-test that fetches JWKS once and emits `mcp.auth.startup.ok`; failure exits non-zero.","Replace the warn-and-continue branch with `sys.exit(1)` when `MCP_ENABLE_AUTH=true` and any required env var is missing. Default `MCP_ENABLE_AUTH=true` in IaC for both regional MCP Container Apps. Add a startup self-test that fetches JWKS once and emits `mcp.auth.startup.ok`; failure exits non-zero.","resiliency;P0-028"
+"P0-029: WebSocket `user_id` accepted from query param without token validation","Bug","1","1 - Critical","New","Finding: P0-029: WebSocket `user_id` accepted from query param without token validation
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The WebSocket endpoint takes `user_id` from the query string and uses it directly as the connection key, with no token validation on upgrade. After P0-010 introduces the pub/sub backplane, every region subscribes to `user_id`-keyed topics — meaning any client can claim any user's stream simply by passing that user's id in the URL. Active/active across `{primaryRegion}` and `{secondaryRegion}` exposes the same flaw on both sides of the GLB, doubling the attack surface.
+
+File: src/backend/v4/api/router.py:54-63
+
+```python
+# before — user_id from query param, no token check
+@router.websocket(""/api/v4/ws"")
+async def ws_handler(websocket: WebSocket, user_id: str = Query(...)):
+ await websocket.accept()
+ await connection_config.attach(user_id, websocket) # any client can claim any user
+ while True:
+ msg = await websocket.receive_json()
+```
+
+Recommended Fix: On WebSocket upgrade, read the bearer token from the `Authorization` header (or `?access_token=` for browser WS over `wss://`), call the same `validate_bearer_token` validator as `AuthMiddleware`, derive `user_id` from `principal[""oid""]`, close with code `1008` on missing/invalid token. Never trust the query-string `user_id`.","On WebSocket upgrade, read the bearer token from the `Authorization` header (or `?access_token=` for browser WS over `wss://`), call the same `validate_bearer_token` validator as `AuthMiddleware`, derive `user_id` from `principal[""oid""]`, close with code `1008` on missing/invalid token. Never trust the query-string `user_id`.","resiliency;P0-029"
+"P0-030: Cosmos PE only in primary while Cosmos fails over","Bug","1","1 - Critical","New","Finding: P0-030: Cosmos PE only in primary while Cosmos fails over
+
+Priority: P0
+
+Resiliency Related: Yes
+
+Issue: The Cosmos Private Endpoint exists only in the primary VNet; once Cosmos is given a secondary region (P0-003), the PE wiring is missing in `{secondaryRegion}`. With `publicNetworkAccess=Disabled`, secondary-region Container Apps either resolve the public Cosmos FQDN (blocked) or fail DNS entirely. After regional failover, Cosmos hands out the secondary write region, but the secondary region has no PE/DNS path to it — reads and writes time out, defeating active/active.
+
+File: infra/main.bicep:1088-1101
+
+```bicep
+// before — Cosmos PE only in {primaryRegion}; secondary VNet has no PE or DNS link
+resource cosmosPe 'Microsoft.Network/privateEndpoints@2024-05-01' = {
+ name: 'pe-cosmos-${primaryLocation}'
+ location: primaryLocation
+ properties: {
+ subnet: { id: networkPrimary.outputs.peSubnetId }
+ privateLinkServiceConnections: [
+ { name: 'cosmos', properties: { privateLinkServiceId: cosmos.outputs.resourceId, groupIds: [ 'Sql' ] } }
+ ]
+ }
+}
+```
+
+Recommended Fix: Add a `Microsoft.Network/privateEndpoints` in `{secondaryRegion}` targeting the same Cosmos account (`groupIds: ['Sql']`) in the secondary PE subnet; ensure the global Private DNS zone exists exactly once; add `virtualNetworkLinks` for both VNets with `registrationEnabled=false`; add a `privateDnsZoneGroups` child to *each* PE; validate `nslookup` from each region resolves to the local PE IP.","Add a `Microsoft.Network/privateEndpoints` in `{secondaryRegion}` targeting the same Cosmos account (`groupIds: ['Sql']`) in the secondary PE subnet; ensure the global Private DNS zone exists exactly once; add `virtualNetworkLinks` for both VNets with `registrationEnabled=false`; add a `privateDnsZoneGroups` child to *each* PE; validate `nslookup` from each region resolves to the local PE IP.","resiliency;P0-030"
+"P1-001: Azure OpenAI deployments single-region","Bug","2","2 - High","New","Finding: P1-001: Azure OpenAI deployments single-region
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: OpenAI model deployments (`gpt-4o`, embeddings, etc.) are projected only through the primary-region Foundry account, with no peer deployments in `{secondaryRegion}`. The single-region topology means that on regional failover the secondary-region backend has no deployment to call: the SDK returns 404 / DNS errors for every chat-completions or embeddings request. Even a healthy peer Foundry account (P0-001) is useless until matching deployments and capacity exist there.
+
+File: infra/modules/ai-services-deployments.bicep
+
+```bicep
+// Single-region projection — deployments only against primary Foundry
+module openAiDeployments 'modules/ai-services-deployments.bicep' = {
+ name: 'oai-deploys'
+ params: {
+ parentAccountName: aiFoundry.outputs.name
+ deployments: openAiDeployments
+ }
+}
+```
+
+Recommended Fix: Promote the deployment list to a parameterized array consumed by `infra/modules/ai-services-deployments.bicep`, instantiate the module against both `aiFoundryPrimary` and `aiFoundrySecondary` with identical names + versions, and switch SKUs to `GlobalStandard` (or `DataZoneStandard` where allowed) so quota is portable.","Promote the deployment list to a parameterized array consumed by `infra/modules/ai-services-deployments.bicep`, instantiate the module against both `aiFoundryPrimary` and `aiFoundrySecondary` with identical names + versions, and switch SKUs to `GlobalStandard` (or `DataZoneStandard` where allowed) so quota is portable.","resiliency;P1-001"
+"P1-002: Azure AI Search 1×1 + public network, single-region","Bug","2","2 - High","New","Finding: P1-002: Azure AI Search 1×1 + public network, single-region
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: AI Search is provisioned at `replicaCount=1, partitionCount=1` with public network access in `{primaryRegion}` only. The single-region → active/active migration requires a peer Search service in `{secondaryRegion}`; today a single replica failure or zone incident takes RAG offline, and there is no peer service to satisfy grounded retrieval after cutover. Public network access also widens attack surface relative to the rest of the stack which is on Private Endpoints.
+
+File: infra/main.bicep:1697-1751
+
+```bicep
+module search 'br/public:avm/res/search/search-service:0.x.y' = {
+ name: 'srch'
+ params: {
+ name: 'srch-${solutionPrefix}'
+ location: location
+ sku: 'standard'
+ replicaCount: 1
+ partitionCount: 1
+ publicNetworkAccess: 'Enabled'
+ }
+}
+```
+
+Recommended Fix: Provision a peer `Microsoft.Search/searchServices` in `{secondaryRegion}` via the same module with `replicaCount: 3` and `partitionCount: 2`, set `publicNetworkAccess: 'Disabled'`, add Private Endpoints with `privatelink.search.windows.net`, and drive index parity from a JSON catalog applied to both services post-deploy.","Provision a peer `Microsoft.Search/searchServices` in `{secondaryRegion}` via the same module with `replicaCount: 3` and `partitionCount: 2`, set `publicNetworkAccess: 'Disabled'`, add Private Endpoints with `privatelink.search.windows.net`, and drive index parity from a JSON catalog applied to both services post-deploy.","resiliency;P1-002"
+"P1-003: Container Apps + Environment zone redundancy gated","Bug","2","2 - High","New","Finding: P1-003: Container Apps + Environment zone redundancy gated
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Container Apps Environment hosting `backend` and `mcp_server` is provisioned in `{primaryRegion}` with `zoneRedundant` left at the AVM default (false) and Container Apps in `revisionsMode='Single'`. The single-region → active/active topology requires a peer Environment in `{secondaryRegion}`; today a zone incident takes all replicas down at once and during regional failover there is no environment to host workloads at all.
+
+File: infra/main.bicep:1143-1170
+
+```bicep
+module acaEnv 'br/public:avm/res/app/managed-environment:0.x.y' = {
+ name: 'aca-env'
+ params: {
+ name: 'cae-${solutionPrefix}'
+ location: location
+ // zoneRedundant defaults to false
+ }
+}
+
+resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
+ properties: {
+ configuration: { activeRevisionsMode: 'Single' }
+ }
+}
+```
+
+Recommended Fix: Set `zoneRedundant: true` on both Environments, ensure the delegated subnet meets `/27` minimum, set `revisionsMode: 'Multiple'` plus `minReplicas: 3` on every Container App, and provision a peer Environment bound to the `{secondaryRegion}` VNet.","Set `zoneRedundant: true` on both Environments, ensure the delegated subnet meets `/27` minimum, set `revisionsMode: 'Multiple'` plus `minReplicas: 3` on every Container App, and provision a peer Environment bound to the `{secondaryRegion}` VNet.","resiliency;P1-003"
+"P1-004: App Service + Plan zone redundancy gated","Bug","2","2 - High","New","Finding: P1-004: App Service + Plan zone redundancy gated
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The frontend App Service plan uses `P1v3`-class without `zoneRedundant=true` and there is no peer plan in `{secondaryRegion}`. The single-region → active/active design needs a UI origin behind the GLB in both regions; today a zone outage takes the SPA origin offline and regional failover has no UI origin until a peer is provisioned. `healthCheckPath` is also unset, so App Service intra-plan load balancing does not exclude unhealthy instances.
+
+File: infra/main.bicep:1539-1573
+
+```bicep
+module webPlan 'br/public:avm/res/web/serverfarm:0.x.y' = {
+ name: 'plan'
+ params: {
+ name: 'asp-${solutionPrefix}'
+ location: location
+ skuName: 'P1v3'
+ // zoneRedundant defaults to false; capacity not pinned
+ }
+}
+
+module webApp 'br/public:avm/res/web/site:0.x.y' = {
+ params: {
+ siteConfig: { minTlsVersion: '1.2' } // healthCheckPath unset
+ }
+}
+```
+
+Recommended Fix: Set `sku: { name: 'P1v3', tier: 'PremiumV3' }`, `zoneRedundant: true`, and `skuCapacity: 3` on both regional plans; set `healthCheckPath: '/healthz/ready'` on each Web App; place both behind the GLB.","Set `sku: { name: 'P1v3', tier: 'PremiumV3' }`, `zoneRedundant: true`, and `skuCapacity: 3` on both regional plans; set `healthCheckPath: '/healthz/ready'` on each Web App; place both behind the GLB.","resiliency;P1-004"
+"P1-005: Container Registry no geo-replication","Bug","2","2 - High","New","Finding: P1-005: Container Registry no geo-replication
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The customer-owned ACR is single-region with no `replications` block. The single-region → active/active topology means that on a regional outage of the ACR home region, image pulls in `{secondaryRegion}` fail (DNS or 5xx) and Container Apps cannot scale or roll new revisions. Cross-region pulls from the surviving region also breach data-locality intent and add latency to cold-starts.
+
+File: infra/main.bicep:140-160
+
+```bicep
+module acr 'br/public:avm/res/container-registry/registry:0.x.y' = {
+ name: 'acr-${solutionPrefix}'
+ params: {
+ name: 'acr${solutionPrefix}'
+ location: location
+ acrSku: 'Standard' // no replications, no zone redundancy
+ }
+}
+```
+
+Recommended Fix: Set `acrSku: 'Premium'`, add `replications: [{ location: secondaryLocation }]` (the base account is the primary), enable `zoneRedundancy: 'Enabled'`, and grant `AcrPull` to both regions' UAMIs at the registry scope.","Set `acrSku: 'Premium'`, add `replications: [{ location: secondaryLocation }]` (the base account is the primary), enable `zoneRedundancy: 'Enabled'`, and grant `AcrPull` to both regions' UAMIs at the registry scope.","resiliency;P1-005"
+"P1-006: Storage Blob default replication (LRS)","Bug","2","2 - High","New","Finding: P1-006: Storage Blob default replication (LRS)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Storage account hosting documents and indexed sources is created without an explicit `skuName`, and `enableRedundancy` is not threaded into the AVM call, so the account defaults to `Standard_LRS`. The single-region → active/active migration requires zone- and region-redundant storage; today a zone incident loses durability and a regional outage loses availability of every blob the RAG pipeline depends on.
+
+File: infra/main.bicep:1597-1612
+
+```bicep
+module storage 'br/public:avm/res/storage/storage-account:0.x.y' = {
+ name: 'st-${solutionPrefix}'
+ params: {
+ name: 'st${solutionPrefix}'
+ location: location
+ // skuName omitted => defaults to Standard_LRS
+ // enableRedundancy not threaded
+ publicNetworkAccess: 'Enabled'
+ }
+}
+```
+
+Recommended Fix: Add a `storageSkuName` parameter (default `Standard_GZRS`, allowed `[Standard_GZRS, Standard_RAGZRS, Standard_ZRS]`), pass it plus `enableRedundancy` into the AVM, and configure the SDK with `secondary_hostname` so reads can fall back to `<acct>-secondary.blob.core.windows.net`.","Add a `storageSkuName` parameter (default `Standard_GZRS`, allowed `[Standard_GZRS, Standard_RAGZRS, Standard_ZRS]`), pass it plus `enableRedundancy` into the AVM, and configure the SDK with `secondary_hostname` so reads can fall back to `<acct>-secondary.blob.core.windows.net`.","resiliency;P1-006"
+"P1-007: Entra ID + UAMI cross-region readiness","Bug","2","2 - High","New","Finding: P1-007: Entra ID + UAMI cross-region readiness
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: A single `Microsoft.ManagedIdentity/userAssignedIdentities` is created in `{primaryRegion}` and attached to every workload and data plane (Cosmos, Foundry, OpenAI, Search, Storage, ACR), with RBAC granted on resources that live only in the primary region. Moving from single-region to active/active means data-plane RBAC will not be propagated for the same UAMI on peer resources in `{secondaryRegion}` unless mirrored, and a primary-region IMDS metadata propagation issue can stall token issuance from secondary replicas.
+
+File: infra/main.bicep:384-388
+
+```bicep
+resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+ name: 'id-${solutionPrefix}'
+ location: location
+}
+// RBAC granted only to primary-region resources
+```
+
+Recommended Fix: Create `uamiPrimary` and `uamiSecondary`, attach the local UAMI to each region's workloads, and grant both UAMIs the required role on every regional data-plane resource using deterministic role-assignment GUIDs. Read `tenant_id` and `client_id` from env only.","Create `uamiPrimary` and `uamiSecondary`, attach the local UAMI to each region's workloads, and grant both UAMIs the required role on every regional data-plane resource using deterministic role-assignment GUIDs. Read `tenant_id` and `client_id` from env only.","resiliency;P1-007"
+"P1-008: Bastion zone-redundancy not configured","Bug","2","2 - High","New","Finding: P1-008: Bastion zone-redundancy not configured
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Bastion is provisioned without `availabilityZones`, so a single-zone fault in `{primaryRegion}` removes the only operator entry path. The single-region → active/active design needs a peer Bastion in `{secondaryRegion}` plus zone redundancy in each region; during a zonal incident or regional failover triage today the team has no jumpbox path until a peer Bastion is built.
+
+File: infra/main.bicep:421-433
+
+```bicep
+resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
+ name: 'bas-${solutionPrefix}'
+ location: location
+ sku: { name: 'Basic' }
+ // no availabilityZones property
+}
+```
+
+Recommended Fix: Use `skuName: 'Standard'` with `availabilityZones: ['1','2','3']` and provision a peer Bastion in `{secondaryRegion}` with the same configuration; document the operator runbook for cross-region access via `<bastion-secondary>.bastion.azure.com`.","Use `skuName: 'Standard'` with `availabilityZones: ['1','2','3']` and provision a peer Bastion in `{secondaryRegion}` with the same configuration; document the operator runbook for cross-region access via `<bastion-secondary>.bastion.azure.com`.","resiliency;P1-008"
+"P1-009: Windows Jumpbox VM zone-1 pinned + PPG","Bug","2","2 - High","New","Finding: P1-009: Windows Jumpbox VM zone-1 pinned + PPG
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Windows jumpbox VM is pinned to `zones: [1]` inside a proximity placement group (PPG). The single-region → active/active design needs zone-spanning operator hosts in each region; today a zone-1 incident in `{primaryRegion}` removes the only operator host, the PPG forbids relocating the VM across zones without redeploy, and there is no peer jumpbox in `{secondaryRegion}`.
+
+File: infra/main.bicep:609-660
+
+```bicep
+resource jumpboxVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
+ name: 'vm-jump-${solutionPrefix}'
+ location: location
+ zones: [ '1' ]
+ properties: {
+ proximityPlacementGroup: { id: ppg.id }
+ osProfile: {
+ adminUsername: 'azureuser'
+ adminPassword: 'literalPassword' // P0-023
+ }
+ }
+}
+```
+
+Recommended Fix: Replace `Microsoft.Compute/virtualMachines` with `Microsoft.Compute/virtualMachineScaleSets` (`zones: ['1','2','3']`, `capacity: 1`), drop the PPG resource and any `proximityPlacementGroup` reference, and provision a peer VMSS in `{secondaryRegion}` with `adminPassword` from Key Vault.","Replace `Microsoft.Compute/virtualMachines` with `Microsoft.Compute/virtualMachineScaleSets` (`zones: ['1','2','3']`, `capacity: 1`), drop the PPG resource and any `proximityPlacementGroup` reference, and provision a peer VMSS in `{secondaryRegion}` with `adminPassword` from Key Vault.","resiliency;P1-009"
+"P1-010: App Service Easy Auth single-tenant config","Bug","2","2 - High","New","Finding: P1-010: App Service Easy Auth single-tenant config
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: App Service Easy Auth is configured for a single-tenant app registration tied to the primary deployment, and the platform settings do not set `requireAuthentication: true` or `unauthenticatedClientAction: RedirectToLoginPage`. Moving from single-region to active/active means deploying the SPA in `{secondaryRegion}` without symmetric Easy Auth config breaks login from the failover region, and the platform-level guard may remain in audit mode in either region.
+
+File: infra/modules/web-sites.config.bicep:10-11
+
+```bicep
+resource authConfig 'Microsoft.Web/sites/config@2023-12-01' = {
+ name: '${siteName}/authsettingsV2'
+ properties: {
+ platform: { enabled: true }
+ // requireAuthentication not set; single-tenant registration
+ identityProviders: { azureActiveDirectory: { enabled: true } }
+ }
+}
+```
+
+Recommended Fix: Set `globalValidation.requireAuthentication: true` and `unauthenticatedClientAction: 'RedirectToLoginPage'`, use one app registration with redirect URIs for both Web Apps and the GLB hostname, parameterize `tenantId`, and reference the client secret only via `clientSecretSettingName` backed by Key Vault (or use federated credentials).","Set `globalValidation.requireAuthentication: true` and `unauthenticatedClientAction: 'RedirectToLoginPage'`, use one app registration with redirect URIs for both Web Apps and the GLB hostname, parameterize `tenantId`, and reference the client secret only via `clientSecretSettingName` backed by Key Vault (or use federated credentials).","resiliency;P1-010"
+"P1-011: MCP JWT/JWKS single-region issuer config","Bug","2","2 - High","New","Finding: P1-011: MCP JWT/JWKS single-region issuer config
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: MCP JWT/JWKS validation is wired to a single issuer / single JWKS endpoint resolved from env, and on JWKS fetch failure the validator falls back to a permissive mode or caches stale keys indefinitely. Moving from single-region to active/active means the MCP in `{secondaryRegion}` cannot validate tokens during a primary-region issuer outage if the URL is a regional alias, and the fail-open path silently accepts unsigned tokens. Cross-ref P0-028.
+
+File: src/mcp_server/mcp_server.py:31-52
+
+```python
+def validate_token(token: str) -> dict:
+ try:
+ keys = httpx.get(os.environ[""JWKS_URI""]).json()
+ return decode(token, keys, algorithms=[""RS256""])
+ except Exception:
+ return {} # fail-open — accept on JWKS failure
+```
+
+Recommended Fix: Pin `JWT_ISSUER='https://login.microsoftonline.com/{tenantId}/v2.0'` and the corresponding JWKS URI, cache JWKS for 1 hour with a force-refresh on `kid` miss, validate `aud`/`iss`/`exp`/`nbf`, reject `none`/symmetric algorithms, and fail closed on JWKS unavailability.","Pin `JWT_ISSUER='https://login.microsoftonline.com/{tenantId}/v2.0'` and the corresponding JWKS URI, cache JWKS for 1 hour with a force-refresh on `kid` miss, validate `aud`/`iss`/`exp`/`nbf`, reject `none`/symmetric algorithms, and fail closed on JWKS unavailability.","resiliency;P1-011"
+"P1-012: External `biabcontainerreg.azurecr.io` shared registry","Bug","2","2 - High","New","Finding: P1-012: External `biabcontainerreg.azurecr.io` shared registry
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Customer-deployed images are pulled from an external Microsoft-owned registry the customer does not own. Moving from single-region to active/active does not fix this: both `{primaryRegion}` and `{secondaryRegion}` remain coupled to a single registry the customer cannot guarantee for tag immutability, signing, or replication, so an upstream ACR incident blocks pulls in both regions simultaneously. Cross-ref P0-022 for the full mitigation.
+
+File: infra/main.bicep:140-160
+
+```bicep
+var backendImage = 'biabcontainerreg.azurecr.io/backend:latest'
+// ... Container App image set to external Microsoft-owned ACR with floating tag
+```
+
+Recommended Fix: Mirror the upstream images into the customer-owned geo-replicated ACR (cross-ref P0-022), enable tag immutability, sign with Notary v2 / Cosign, and pin Container App images to `{loginServer}/<repo>@sha256:<digest>`.","Mirror the upstream images into the customer-owned geo-replicated ACR (cross-ref P0-022), enable tag immutability, sign with Notary v2 / Cosign, and pin Container App images to `{loginServer}/<repo>@sha256:<digest>`.","resiliency;P1-012"
+"P1-013: Hard-coded Cosmos region-pair map","Bug","2","2 - High","New","Finding: P1-013: Hard-coded Cosmos region-pair map
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: A literal `region → pair` table inside `infra/main.bicep` selects the Cosmos secondary region instead of accepting an explicit operator parameter. The current single-region → active/active migration relies on this map to derive the peer location, so any deployment to a region outside the encoded set silently degrades to a single-region account or selects an incorrect pair without raising an error. This couples the IaC to a specific Azure pairing snapshot that changes over time and blocks symmetric two-region topology.
+
+File: infra/main.bicep:191-204
+
+```bicep
+// Hard-coded pair map drives Cosmos secondary region selection
+var regionPairMap = {
+ eastus: 'westus'
+ eastus2: 'centralus'
+ westeurope: 'northeurope'
+ // ... limited encoded set
+}
+var cosmosSecondary = regionPairMap[location]
+```
+
+Recommended Fix: Replace the `regionPairMap` with `param primaryLocation string` and `param secondaryLocation string`, both `@allowed[]`-validated to an operator-curated list of paired regions, and pass `secondaryLocation` directly into the Cosmos `locations[]` array.","Replace the `regionPairMap` with `param primaryLocation string` and `param secondaryLocation string`, both `@allowed[]`-validated to an operator-curated list of paired regions, and pass `secondaryLocation` directly into the Cosmos `locations[]` array.","resiliency;P1-013"
+"P1-014: Hard-coded Log Analytics replica region pairs","Bug","2","2 - High","New","Finding: P1-014: Hard-coded Log Analytics replica region pairs
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Log Analytics workspace replication is wired through a hard-coded paired-region table identical in shape to the Cosmos map (P1-013). The single-region → active/active topology requires the LA replica to land in the same operator-chosen `{secondaryRegion}` that hosts every other peer; outside the encoded pair set the replica points to the wrong region or silently no-ops. This breaks the cross-region observability that the failover itself depends on for triage.
+
+File: infra/main.bicep
+
+```bicep
+// Replica region resolved via the same hard-coded pair table
+var laReplicaLocation = regionPairMap[location]
+
+resource laReplica 'Microsoft.OperationalInsights/workspaces/replicas@2025-02-01' = {
+ parent: logAnalytics
+ name: laReplicaLocation
+ location: laReplicaLocation
+}
+```
+
+Recommended Fix: Add `param logAnalyticsReplicaLocation string = secondaryLocation` (constrained by `@allowed[]`) and pass it into the workspace replica resource so LA replication aligns with the explicit secondary parameter from P0-005 / P1-013.","Add `param logAnalyticsReplicaLocation string = secondaryLocation` (constrained by `@allowed[]`) and pass it into the workspace replica resource so LA replication aligns with the explicit secondary parameter from P0-005 / P1-013.","resiliency;P1-014"
+"P1-015: Jumpbox + PPG zone-1 / Bastion no zones","Bug","2","2 - High","New","Finding: P1-015: Jumpbox + PPG zone-1 / Bastion no zones
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The operator path combines a jumpbox pinned to `zones: [1]` inside a proximity placement group (P1-009) with a Bastion provisioned without `availabilityZones` (P1-008). In the single-region topology a single zone-1 incident in `{primaryRegion}` removes the entire operator entry path simultaneously, and the active/active design has no peer Bastion or jumpbox in `{secondaryRegion}` to fall back to during regional failover triage.
+
+File: infra/main.bicep:424
+
+```bicep
+// Bastion: no zones, single SKU; Jumpbox VM pinned zone-1 in PPG
+resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
+ // no availabilityZones property
+}
+
+resource jumpboxVm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
+ zones: [ '1' ]
+ properties: {
+ proximityPlacementGroup: { id: ppg.id }
+ }
+}
+```
+
+Recommended Fix: Apply P1-008 (Bastion Standard SKU with `availabilityZones: ['1','2','3']` per region) and P1-009 (replace the VM + PPG with a zone-spanning VMSS per region) together as a single operator-readiness change.","Apply P1-008 (Bastion Standard SKU with `availabilityZones: ['1','2','3']` per region) and P1-009 (replace the VM + PPG with a zone-spanning VMSS per region) together as a single operator-readiness change.","resiliency;P1-015"
+"P1-016: AI Search 1×1 + public network","Bug","2","2 - High","New","Finding: P1-016: AI Search 1×1 + public network
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Same root cause as P1-002 expressed from the redundancy + exposure angle: AI Search is sized at `replicaCount=1, partitionCount=1` with public network access enabled in `{primaryRegion}` only. The single-region → active/active topology cannot rely on a single replica or public exposure; today a single replica failure or zone incident takes RAG offline, and public access broadens attack surface.
+
+File: infra/main.bicep:1697-1751
+
+```bicep
+module search 'br/public:avm/res/search/search-service:0.x.y' = {
+ params: {
+ sku: 'standard'
+ replicaCount: 1
+ partitionCount: 1
+ publicNetworkAccess: 'Enabled'
+ }
+}
+```
+
+Recommended Fix: Apply the P1-002 implementation in full; specifically gate `semanticSearch: 'standard'` behind a deploy parameter so it is enabled only after replica/partition resize completes.","Apply the P1-002 implementation in full; specifically gate `semanticSearch: 'standard'` behind a deploy parameter so it is enabled only after replica/partition resize completes.","resiliency;P1-016"
+"P1-017: Backend env hardcodes single-region URLs","Bug","2","2 - High","New","Finding: P1-017: Backend env hardcodes single-region URLs
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Container Apps env vars on the backend bake in single-region FQDNs for Cosmos, Foundry, Search, and Storage. In the single-region → active/active migration these literals defeat regional locality: a backend replica running in `{secondaryRegion}` calls primary-region endpoints over the internet (or fails entirely if those endpoints are down), so every other peer-resource fix is undone by the env wiring.
+
+File: infra/main.bicep:1359-1387
+
+```bicep
+// Single-region FQDNs baked into backend env
+env: [
+ { name: 'AZURE_AI_PROJECT_ENDPOINT', value: aiFoundry.outputs.endpoint }
+ { name: 'AZURE_SEARCH_ENDPOINT', value: search.outputs.endpoint }
+ { name: 'COSMOS_ENDPOINT', value: cosmos.outputs.primaryEndpoint }
+ { name: 'STORAGE_ACCOUNT_URL', value: storage.outputs.primaryBlobEndpoint }
+]
+```
+
+Recommended Fix: Emit `*_PRIMARY` / `*_SECONDARY` env pairs plus `APP_REGION` from Bicep, and refactor `app_config.AppConfig` to expose `resolve_*_endpoint()` methods that every client builder calls.","Emit `*_PRIMARY` / `*_SECONDARY` env pairs plus `APP_REGION` from Bicep, and refactor `app_config.AppConfig` to expose `resolve_*_endpoint()` methods that every client builder calls.","resiliency;P1-017"
+"P1-018: CosmosClient has no `preferred_locations`","Bug","2","2 - High","New","Finding: P1-018: CosmosClient has no `preferred_locations`
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `CosmosClient` is constructed in `app_config` without `preferred_locations`, so the SDK selects a region from account metadata in arbitrary order. In an active/active topology, reads from a `{secondaryRegion}` replica may be routed to the `{primaryRegion}` write endpoint over the internet, inflating latency under steady state and breaking clean failover when the local endpoint degrades.
+
+File: src/backend/common/config/app_config.py:222-242
+
+```python
+self._cosmos = CosmosClient(
+ url=os.environ[""COSMOS_ACCOUNT_ENDPOINT""],
+ credential=self.credential,
+)
+```
+
+Recommended Fix: Resolve `app_region` and `peer_region` from environment in `app_config`, pass them as `preferred_locations`, set `consistency_level='Session'`, and keep `enable_endpoint_discovery=True` so the SDK reacts to Cosmos auto-failover events.","Resolve `app_region` and `peer_region` from environment in `app_config`, pass them as `preferred_locations`, set `consistency_level='Session'`, and keep `enable_endpoint_discovery=True` so the SDK reacts to Cosmos auto-failover events.","resiliency;P1-018"
+"P1-019: Single ACR hostname for all workloads","Bug","2","2 - High","New","Finding: P1-019: Single ACR hostname for all workloads
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Backend, MCP, and Web App image references all point at the same single-region ACR hostname, so any ACR regional incident blocks pulls across all workloads in both `{primaryRegion}` and `{secondaryRegion}`. The single-region → active/active migration requires a parameterized registry hostname sourced from the geo-replicated ACR (P1-005) so each region pulls from its local replica.
+
+File: infra/main.bicep:140-160
+
+```bicep
+// All workloads reference one literal hostname
+var backendImage = 'acr${solutionPrefix}.azurecr.io/backend:latest'
+var mcpImage = 'acr${solutionPrefix}.azurecr.io/mcp:latest'
+var webImage = 'acr${solutionPrefix}.azurecr.io/web:latest'
+```
+
+Recommended Fix: Promote `registryLoginServer` to a Bicep variable from the geo-replicated ACR, pin every workload `image` to `'${registryLoginServer}/<repo>@sha256:<digest>'`, and surface the digest as a deployment parameter for reproducibility.","Promote `registryLoginServer` to a Bicep variable from the geo-replicated ACR, pin every workload `image` to `'${registryLoginServer}/<repo>@sha256:<digest>'`, and surface the digest as a deployment parameter for reproducibility.","resiliency;P1-019"
+"P1-020: Storage AVM no `skuName` / `enableRedundancy` not threaded","Bug","2","2 - High","New","Finding: P1-020: Storage AVM no `skuName` / `enableRedundancy` not threaded
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Storage AVM call omits `skuName` (defaults to LRS) and never receives the `enableRedundancy` flag from `main.bicep`. This is the threading bug behind P1-006: even after the `storageSkuName` parameter exists in `main.bicep`, the AVM call still hardcodes / defaults the SKU, so the single-region → active/active migration cannot get zone- or region-redundant storage without fixing the wiring.
+
+File: infra/main.bicep:1597-1612
+
+```bicep
+module storage 'br/public:avm/res/storage/storage-account:0.x.y' = {
+ name: 'st-${solutionPrefix}'
+ params: {
+ name: 'st${solutionPrefix}'
+ location: location
+ // skuName not set; enableRedundancy not threaded
+ }
+}
+```
+
+Recommended Fix: Apply P1-006 (parameter + threading) and verify the AVM module call binds both `skuName: storageSkuName` and `enableRedundancy: enableRedundancy` to `main.bicep` parameters rather than AVM defaults.","Apply P1-006 (parameter + threading) and verify the AVM module call binds both `skuName: storageSkuName` and `enableRedundancy: enableRedundancy` to `main.bicep` parameters rather than AVM defaults.","resiliency;P1-020"
+"P1-021: `upsert_item` no `_etag` / optimistic concurrency","Bug","2","2 - High","New","Finding: P1-021: `upsert_item` no `_etag` / optimistic concurrency
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Cosmos wrapper calls `upsert_item` without `_etag` checks. The current single-region account masks this, but once the active/active topology enables multi-region writes (P1-023), concurrent updates from `{primaryRegion}` and `{secondaryRegion}` silently overwrite each other under last-writer-wins, corrupting plan and step state across the regional boundary.
+
+File: src/backend/common/database/cosmosdb.py:110-176
+
+```python
+async def update_plan(self, plan_id: str, partition_key: str, doc: dict) -> dict:
+ return await self._container.upsert_item(body=doc)
+```
+
+Recommended Fix: Read with `read_item` to capture `_etag`, mutate, then `replace_item(if_match_etag=...)`. On 412 Precondition Failed, re-read and retry with bounded attempts; on exhaustion raise a typed `ConcurrentUpdateError` and emit a `cosmos.etag.conflict` metric.","Read with `read_item` to capture `_etag`, mutate, then `replace_item(if_match_etag=...)`. On 412 Precondition Failed, re-read and retry with bounded attempts; on exhaustion raise a typed `ConcurrentUpdateError` and emit a `cosmos.etag.conflict` metric.","resiliency;P1-021"
+"P1-022: `except Exception` swallows 429 / 503","Bug","2","2 - High","New","Finding: P1-022: `except Exception` swallows 429 / 503
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Cosmos wrapper catches bare `Exception` and logs, so throttling (429) and service unavailability (503) are indistinguishable from genuine bugs. In a single-region setup this hides degradation; in active/active the retry policy from P0-014/P0-015 cannot fire because the typed exception is consumed at the wrong layer, and `/healthz/ready` cannot reflect dependency health to the GLB.
+
+File: src/backend/common/database/cosmosdb.py:110-176
+
+```python
+try:
+ return await fn(*args, **kwargs)
+except Exception as e:
+ logger.exception(""cosmos call failed: %s"", e)
+ return None
+```
+
+Recommended Fix: Replace `except Exception` with `except CosmosHttpResponseError`, switch on `status_code` (429 honors `x-ms-retry-after-ms`; 503/408 backoff; 412 raises `ConcurrentUpdateError`; default re-raises), and emit per-status metrics.","Replace `except Exception` with `except CosmosHttpResponseError`, switch on `status_code` (429 honors `x-ms-retry-after-ms`; 503/408 backoff; 412 raises `ConcurrentUpdateError`; default re-raises), and emit per-status metrics.","resiliency;P1-022"
+"P1-023: Multi-region writes never enabled","Bug","2","2 - High","New","Finding: P1-023: Multi-region writes never enabled
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Cosmos resource in IaC never sets `enableMultipleWriteLocations: true` or `enableAutomaticFailover: true`. Even after migrating off serverless (P0-013) and adding `{secondaryRegion}` to `locations[]` (P0-003), the secondary cannot accept writes — active/active collapses to active/passive for Cosmos, forcing every write to round-trip back to `{primaryRegion}`.
+
+File: infra/main.bicep:1110-1136
+
+```bicep
+module cosmos 'br/public:avm/res/document-db/database-account:0.x.y' = {
+ name: 'cosmos-${solutionPrefix}'
+ params: {
+ name: 'cosmos-${solutionPrefix}'
+ locations: [
+ { locationName: primaryLocation, failoverPriority: 0 }
+ ]
+ }
+}
+```
+
+Recommended Fix: Set `automaticFailoverEnabled: true` and `enableMultipleWriteLocations: true` on the account, define an explicit `conflictResolutionPolicy` per container, and gate the change behind P0-013, P0-003, P1-021 (etag), and P1-018 (preferred_locations).","Set `automaticFailoverEnabled: true` and `enableMultipleWriteLocations: true` on the account, define an explicit `conflictResolutionPolicy` per container, and gate the change behind P0-013, P0-003, P1-021 (etag), and P1-018 (preferred_locations).","resiliency;P1-023"
+"P1-024: Singleton CosmosClient no preferred regions","Bug","2","2 - High","New","Finding: P1-024: Singleton CosmosClient no preferred regions
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `app_config` constructs a single sync + async `CosmosClient` pair at startup with no `preferred_locations` and caches them for the process lifetime. In active/active, every read from a `{secondaryRegion}` replica may be routed by the SDK to the `{primaryRegion}` write endpoint, breaking locality during normal operation and producing slow cross-region calls during failover.
+
+File: src/backend/common/config/app_config.py:222-242
+
+```python
+def _build_cosmos_clients(self) -> None:
+ self._cosmos_async = AsyncCosmosClient(
+ url=os.environ[""COSMOS_ACCOUNT_ENDPOINT""],
+ credential=self.credential,
+ )
+ self._cosmos_sync = SyncCosmosClient(
+ url=os.environ[""COSMOS_ACCOUNT_ENDPOINT""],
+ credential=self.credential,
+ )
+```
+
+Recommended Fix: Add `app_region`/`peer_region` properties on `AppConfig` from env, pass `preferred_locations` to both sync and async clients in `_build_cosmos_clients()`, and route every consumer through `app_config.get_cosmos_client()`.","Add `app_region`/`peer_region` properties on `AppConfig` from env, pass `preferred_locations` to both sync and async clients in `_build_cosmos_clients()`, and route every consumer through `app_config.get_cosmos_client()`.","resiliency;P1-024"
+"P1-025: Container Apps revisionsMode Single, no graceful drain","Bug","2","2 - High","New","Finding: P1-025: Container Apps revisionsMode Single, no graceful drain
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Each Container App is deployed with `activeRevisionsMode: 'Single'` and no termination grace or SIGTERM drain hook. As the application moves from single-region to active/active, every revision swap (deploy, scale-in, image bump) hard-cuts in-flight WebSocket sessions and HTTP requests in either region, surfacing as user-visible 502s and lost agent stream output during cutovers.
+
+File: infra/main.bicep:1143-1170
+
+```bicep
+resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
+ name: 'ca-backend-${solutionPrefix}'
+ properties: {
+ configuration: {
+ activeRevisionsMode: 'Single'
+ ingress: { external: true, targetPort: 8000 }
+ }
+ template: {
+ containers: [ /* ... */ ]
+ }
+ }
+}
+```
+
+Recommended Fix: Switch to `revisionsMode: 'Multiple'` with weighted traffic during deploys, set `terminationGracePeriodSeconds: 60`, and add a FastAPI SIGTERM handler that flips readiness to 503 and closes WebSockets cleanly.","Switch to `revisionsMode: 'Multiple'` with weighted traffic during deploys, set `terminationGracePeriodSeconds: 60`, and add a FastAPI SIGTERM handler that flips readiness to 503 and closes WebSockets cleanly.","resiliency;P1-025"
+"P1-026: DatabaseFactory / app_config no health-driven invalidation","Bug","2","2 - High","New","Finding: P1-026: DatabaseFactory / app_config no health-driven invalidation
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `DatabaseFactory` and `app_config` cache Cosmos, Foundry, and Search clients indefinitely. In a single-region world this is fine; in active/active, after a transient regional incident the cached clients keep pointing at a degraded endpoint (stale endpoint discovery, expired DNS, broken PE) and never recover until the replica restarts — so post-failover the region looks ""up"" while every dependency call fails.
+
+File: src/backend/common/database/database_factory.py
+
+```python
+class DatabaseFactory:
+ def __init__(self, config):
+ self._cosmos = config.get_cosmos_client() # cached forever
+
+ def get(self):
+ return self._cosmos
+```
+
+Recommended Fix: Wrap each cached client in a `HealthGatedClient` with N-consecutive-failure invalidation and a 5s background probe (cheap per-dependency call with 2s timeout); the next caller rebuilds the client. Surface state in `/healthz`.","Wrap each cached client in a `HealthGatedClient` with N-consecutive-failure invalidation and a 5s background probe (cheap per-dependency call with 2s timeout); the next caller rebuilds the client. Surface state in `/healthz`.","resiliency;P1-026"
+"P1-027: WebSocket emit best-effort no retry / ack","Bug","2","2 - High","New","Finding: P1-027: WebSocket emit best-effort no retry / ack
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Outbound WebSocket `send_text` / `send_json` calls are wrapped in a bare `try/except` that logs and continues. As the platform moves from single-region to active/active, a transient socket blip or a revision-drain (P1-025) silently drops live agent output, and the client UI has no way to know a token batch was lost. There is no acknowledgement protocol, no dead-letter, and no metric.
+
+File: src/backend/v4/api/connection_config.py
+
+```python
+async def send_event(ws: WebSocket, payload: dict) -> None:
+ try:
+ await ws.send_json(payload)
+ except Exception as e:
+ logger.warning(""ws send failed: %s"", e)
+ # best-effort — payload is dropped
+```
+
+Recommended Fix: Wrap `send_json` in a bounded retry helper with jittered backoff, dead-letter unsent payloads to a Storage Queue keyed by `(plan_id, session_id, sequence)`, and require client `ack` for state-changing notifications.","Wrap `send_json` in a bounded retry helper with jittered backoff, dead-letter unsent payloads to a Storage Queue keyed by `(plan_id, session_id, sequence)`, and require client `ack` for state-changing notifications.","resiliency;P1-027"
+"P1-028: Partial agent_stream_buffers dropped","Bug","2","2 - High","New","Finding: P1-028: Partial agent_stream_buffers dropped
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Streaming agent output is held in process-local `agent_stream_buffers` and only persisted to Cosmos at terminal events. Moving from single-region to active/active makes this worse: a replica swap, SIGTERM (P1-025), socket disconnect (P1-027), or cross-region cutover loses every partial token already shown to the user, and the conversation cannot be reconstructed from durable storage in `{secondaryRegion}` on reconnect.
+
+File: src/backend/v4/callbacks/response_handlers.py
+
+```python
+async def on_agent_chunk(plan_id: str, step_id: str, chunk: str) -> None:
+ # process-local buffer only; persisted on terminal event
+ agent_stream_buffers[(plan_id, step_id)].append(chunk)
+ await ws.send_json({""plan_id"": plan_id, ""step_id"": step_id, ""chunk"": chunk})
+```
+
+Recommended Fix: Append every streamed chunk to a Cosmos container `agent_stream_events` with a monotonic `seq` per `(plan_id, step_id)`, partition key `/plan_id`, TTL 24h. On reconnect, replay `WHERE seq > @lastSeen ORDER BY seq` then resume the live stream.","Append every streamed chunk to a Cosmos container `agent_stream_events` with a monotonic `seq` per `(plan_id, step_id)`, partition key `/plan_id`, TTL 24h. On reconnect, replay `WHERE seq > @lastSeen ORDER BY seq` then resume the live stream.","resiliency;P1-028"
+"P1-029: Cosmos DNS / Private Endpoint failure (F3)","Bug","2","2 - High","New","Finding: P1-029: Cosmos DNS / Private Endpoint failure (F3)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Cosmos Private Endpoint and Private DNS zone live only in `{primaryRegion}`. In active/active, a PE outage, Private DNS misconfiguration, or recursive resolver failure pins traffic on the broken path and never lets the SDK roll over to `{secondaryRegion}`. The SDK's default retries do not cover DNS-resolution exceptions, so the client surfaces `ServiceRequestError` immediately.
+
+File: src/backend/common/database/cosmosdb.py
+
+```python
+async def call(fn, *args, **kwargs):
+ return await fn(*args, **kwargs)
+```
+
+Recommended Fix: Add a peer PE in `{secondaryRegion}` linked to the same Cosmos account, link both VNets to `privatelink.documents.azure.com`, retry on `ServiceRequestError`/`gaierror` with bounded backoff, and assert PE-backed resolution from `/healthz/ready`.","Add a peer PE in `{secondaryRegion}` linked to the same Cosmos account, link both VNets to `privatelink.documents.azure.com`, retry on `ServiceRequestError`/`gaierror` with bounded backoff, and assert PE-backed resolution from `/healthz/ready`.","resiliency;P1-029"
+"P1-030: OpenAI 429 retry exhausted (F4)","Bug","2","2 - High","New","Finding: P1-030: OpenAI 429 retry exhausted (F4)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: OpenAI 429s are retried in a tight loop with limited backoff and without honoring the server-side `Retry-After` header. In a single-region deployment this surfaces as a 5xx; in active/active, sustained throttling in `{primaryRegion}` exhausts the retry budget within seconds and never rolls over to a peer deployment in `{secondaryRegion}` (P1-001).
+
+File: src/backend/v4/orchestration/human_approval_manager.py:114-141
+
+```python
+for _ in range(3):
+ try:
+ return await client.chat.completions.create(**kwargs)
+ except RateLimitError:
+ await asyncio.sleep(1)
+raise
+```
+
+Recommended Fix: Catch `openai.RateLimitError` explicitly, sleep `max(retry_after, jittered_backoff)` capped at 60s, fall back to the peer-region deployment via `app_config.get_openai_client(peer=True)`, and on peer exhaustion return a structured deferred response.","Catch `openai.RateLimitError` explicitly, sleep `max(retry_after, jittered_backoff)` capped at 60s, fall back to the peer-region deployment via `app_config.get_openai_client(peer=True)`, and on peer exhaustion return a structured deferred response.","resiliency;P1-030"
+"P1-031: AI Search unavailable / index missing (F7)","Bug","2","2 - High","New","Finding: P1-031: AI Search unavailable / index missing (F7)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: AI Search outages and missing-index errors propagate as unhandled `HttpResponseError` from `azure.search.documents`, which the orchestrator translates to user-facing 5xx. In a single-region setup any Search incident blocks every grounded answer; in active/active the RAG path has no graceful degradation even though the model could still respond with reduced quality.
+
+File: src/backend/v4/rag/search_client.py
+
+```python
+async def search(self, query: str):
+ docs = await self._client.search(query, top=5)
+ return [d async for d in docs]
+```
+
+Recommended Fix: Convert `ResourceNotFoundError` and `HttpResponseError(503/504)` to a typed `SearchUnavailable`, return `documents=[], degraded=True`, and have the orchestrator add a ""no document context"" system message instead of aborting. Add a Search readiness probe.","Convert `ResourceNotFoundError` and `HttpResponseError(503/504)` to a typed `SearchUnavailable`, return `documents=[], degraded=True`, and have the orchestrator add a ""no document context"" system message instead of aborting. Add a Search readiness probe.","resiliency;P1-031"
+"P1-032: Storage Blob unavailable (F8)","Bug","2","2 - High","New","Finding: P1-032: Storage Blob unavailable (F8)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: A Storage Blob outage cascades into the RAG ingestion pipeline and any backend path that streams attachments. Today an upload fails with `ServiceRequestError` and the user sees a 5xx; there is no deferral, so work is lost rather than retried when Storage recovers — a fragile posture inside a single region and unworkable in active/active.
+
+File: src/backend/common/storage/blob_client.py
+
+```python
+async def upload(blob_name: str, data: bytes) -> None:
+ await container.upload_blob(name=blob_name, data=data, overwrite=True)
+```
+
+Recommended Fix: On `ServiceRequestError` or `HttpResponseError(503)` from blob upload, push a deferred-ingest envelope to a Storage Queue; a worker drains with bounded retry and dead-letters poisoned messages. Add a canary-blob HEAD readiness probe.","On `ServiceRequestError` or `HttpResponseError(503)` from blob upload, push a deferred-ingest envelope to a Storage Queue; a worker drains with bounded retry and dead-letters poisoned messages. Add a canary-blob HEAD readiness probe.","resiliency;P1-032"
+"P1-033: ACR pull failure blocks cold-start (F9)","Bug","2","2 - High","New","Finding: P1-033: ACR pull failure blocks cold-start (F9)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Backend, MCP, and Web App Container App revisions all pull from a single-region ACR. A regional ACR incident or transient registry 5xx during cold-start blocks every replica from coming up in either region — the GLB sees no healthy origin, and there is no pre-pulled fallback image. Active/active requires both regions to have an independent path to images.
+
+File: infra/main.bicep:140-160
+
+```bicep
+resource backendApp '...' = {
+ properties: {
+ configuration: {
+ registries: [
+ { server: acr.outputs.loginServer, identity: uami.outputs.resourceId }
+ ]
+ }
+ }
+}
+```
+
+Recommended Fix: Apply P1-005 (geo-replicated Premium ACR) as primary, provision a passive `Premium` ACR in `{secondaryRegion}` filled by `az acr import` per release, list both `server` entries on each Container App, and pre-pull digests on cold-start.","Apply P1-005 (geo-replicated Premium ACR) as primary, provision a passive `Premium` ACR in `{secondaryRegion}` filled by `az acr import` per release, list both `server` entries on each Container App, and pre-pull digests on cold-start.","resiliency;P1-033"
+"P1-034: Entra ID token failure (F11)","Bug","2","2 - High","New","Finding: P1-034: Entra ID token failure (F11)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `app_config.get_access_token` calls `DefaultAzureCredential.get_token` directly with no retry, no caching, and no surfacing in `/healthz`. A transient Entra ID glitch (`ClientAuthenticationError`, network blip to `login.microsoftonline.com`) becomes a hard 5xx for users, and `/healthz/ready` cannot distinguish auth-broken regions from data-broken ones in the active/active topology.
+
+File: src/backend/common/config/app_config.py:170-176
+
+```python
+def get_access_token(self, scope: str) -> str:
+ return self.credential.get_token(scope).token
+```
+
+Recommended Fix: Wrap `credential.get_token(scope)` with bounded `tenacity` retry on transient `ClientAuthenticationError`, cache `AccessToken` per scope, refresh at `expires_on - 300s`, open a circuit breaker after 3 consecutive failures, and surface state in `/healthz`.","Wrap `credential.get_token(scope)` with bounded `tenacity` retry on transient `ClientAuthenticationError`, cache `AccessToken` per scope, refresh at `expires_on - 300s`, open a circuit breaker after 3 consecutive failures, and surface state in `/healthz`.","resiliency;P1-034"
+"P1-035: Web App proxy timeout (F17)","Bug","2","2 - High","New","Finding: P1-035: Web App proxy timeout (F17)
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The Python frontend proxies API calls to the backend Container App with a fixed-low `httpx` default timeout (~5s) and no retry on transient 5xx. In a single-region deployment this clips long requests; during active/active regional cutover or a peer-region cold-start, normal warm-up exceeds 5s and produces user-visible 504s at the SPA even though the backend recovers within the GLB probe window.
+
+File: src/App/frontend_server.py
+
+```python
+import httpx
+_client = httpx.AsyncClient() # default timeout ~5s, no retry
+
+async def _proxy_get(url: str, headers: dict) -> httpx.Response:
+ return await _client.get(url, headers=headers)
+```
+
+Recommended Fix: Configure a shared `httpx.AsyncClient` with explicit `connect/read/write/pool` timeouts, retry only `GET`/`HEAD` on `502/503/504`/`ConnectError` with bounded attempts, and return a structured 503 body with the region and correlation id on exhaustion.","Configure a shared `httpx.AsyncClient` with explicit `connect/read/write/pool` timeouts, retry only `GET`/`HEAD` on `502/503/504`/`ConnectError` with bounded attempts, and return a structured 503 body with the region and correlation id on exhaustion.","resiliency;P1-035"
+"P1-036: AVM Bicep modules cross-repo dependency","Bug","2","2 - High","New","Finding: P1-036: AVM Bicep modules cross-repo dependency
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `infra/main.bicep` consumes Azure Verified Modules from `br/public:` without strict version pinning in several places. In the single-region → active/active rollout the two regions are typically deployed at different times; an upstream module change between deployments drifts the secondary region from the primary, breaking the symmetric topology that every other P1 fix depends on.
+
+File: infra/main.bicep
+
+```bicep
+// Floating / unpinned AVM references
+module cosmos 'br/public:avm/res/document-db/database-account:0.9.2' = { /* ... */ }
+module aca 'br/public:avm/res/app/managed-environment:0.x.y' = { /* ... */ }
+module web 'br/public:avm/res/web/site:0.x.y' = { /* ... */ }
+```
+
+Recommended Fix: Replace floating `0.x.y` versions with exact pins, mirror critical AVMs to `br:<acr>.azurecr.io/bicep/modules/...`, and switch consumers to the private alias defined in `bicepconfig.json`.","Replace floating `0.x.y` versions with exact pins, mirror critical AVMs to `br:<acr>.azurecr.io/bicep/modules/...`, and switch consumers to the private alias defined in `bicepconfig.json`.","resiliency;P1-036"
+"P1-037: `agent_framework` SDK pre-release pins","Bug","2","2 - High","New","Finding: P1-037: `agent_framework` SDK pre-release pins
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `pyproject.toml` pins `agent_framework` (and related Azure AI packages) to pre-release versions. Pre-release wheels can be republished or yanked, so two image builds days apart can ship different runtime semantics. As the application moves from single-region to active/active, the `{secondaryRegion}` image rebuilt later may behave subtly differently from `{primaryRegion}`, defeating ""build once, deploy both regions.""
+
+File: src/backend/pyproject.toml
+
+```text
+[project]
+dependencies = [
+ ""agent_framework>=1.0.0rc1"",
+ ""azure-cosmos>=4.7.0"",
+ ""azure-identity>=1.17.0"",
+]
+```
+
+Recommended Fix: Switch every pre-release pin to an exact version, generate `requirements.lock` with `pip-compile --generate-hashes`, install with `--require-hashes`, mirror locked wheels to a private feed, and build the image once.","Switch every pre-release pin to an exact version, generate `requirements.lock` with `pip-compile --generate-hashes`, install with `--require-hashes`, mirror locked wheels to a private feed, and build the image once.","resiliency;P1-037"
+"P1-038: MCP shared image single-FQDN","Bug","2","2 - High","New","Finding: P1-038: MCP shared image single-FQDN
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The MCP Container App image and endpoint resolve through a single FQDN tied to one region (cross-ref P0-022 / P1-019). During the move from single-region to active/active, MCP cannot cold-start in `{secondaryRegion}` if the upstream ACR is impaired, and the backend cannot fail over to a peer MCP because `app_config` does not know there is one.
+
+File: infra/main.bicep:140-160
+
+```bicep
+// single MCP Container App in primary region pulling from external ACR
+resource mcp 'Microsoft.App/containerApps@2024-03-01' = {
+ name: 'ca-mcp-${solutionPrefix}'
+ properties: {
+ template: {
+ containers: [ { image: 'biabcontainerreg.azurecr.io/mcp:latest' } ]
+ }
+ }
+}
+```
+
+Recommended Fix: Mirror the MCP image into the geo-replicated customer ACR, deploy MCP in both regions with the same digest, expose `MCP_ENDPOINT_PRIMARY` / `MCP_ENDPOINT_SECONDARY` env, and resolve the local URL with a `mcp.fallback` metric on peer use.","Mirror the MCP image into the geo-replicated customer ACR, deploy MCP in both regions with the same digest, expose `MCP_ENDPOINT_PRIMARY` / `MCP_ENDPOINT_SECONDARY` env, and resolve the local URL with a `mcp.fallback` metric on peer use.","resiliency;P1-038"
+"P1-039: Foundry agent metadata seed coupling","Bug","2","2 - High","New","Finding: P1-039: Foundry agent metadata seed coupling
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Agent definitions in `data/agent_teams/*.json` are seeded into the Foundry Project at deploy time by an operator-run script. Moving from single-region to active/active introduces drift risk: if the seed step is skipped during the secondary-region deploy, or customer-authored teams are added via the UI to one region only, agent metadata diverges across regions and the same plan produces different agents in `{primaryRegion}` vs `{secondaryRegion}`.
+
+File: data/agent_teams/
+
+```python
+# scripts/reseed_agent_teams.py — current
+async def reseed():
+ proj = AIProjectClient(endpoint=os.environ[""AZURE_AI_PROJECT_ENDPOINT""], credential=cred)
+ for path in glob.glob(""data/agent_teams/*.json""):
+ team = json.loads(open(path).read())
+ await proj.agents.create(body=team) # not idempotent; single endpoint
+```
+
+Recommended Fix: Convert seeding to idempotent upserts keyed by `team_id`, run reseed against both regional Foundry Projects in the same CI job, snapshot customer-authored teams to Cosmos + blob, and add a daily drift check.","Convert seeding to idempotent upserts keyed by `team_id`, run reseed against both regional Foundry Projects in the same CI job, snapshot customer-authored teams to Cosmos + blob, and add a daily drift check.","resiliency;P1-039"
+"P1-040: Web App `/health` static literal; MCP HEALTHCHECK unregistered","Bug","2","2 - High","New","Finding: P1-040: Web App `/health` static literal; MCP HEALTHCHECK unregistered
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The frontend `/health` returns the literal string `""OK""` regardless of dependency state, and the MCP container has no Docker `HEALTHCHECK` and no `/healthz` route registered in `mcp_server.py`. Moving from single-region to active/active depends on the GLB choosing a healthy region per request, but the GLB cannot distinguish a serving origin from a hung process when both reply 200 to a static literal.
+
+File: src/App/frontend_server.py
+
+```python
+@app.get(""/health"")
+async def health():
+ return ""OK"" # static literal — always 200
+```
+
+Recommended Fix: Replace the static literal with a real liveness route, add `/healthz/ready` that probes downstream dependencies, register both routes in `mcp_server.py`, add a Docker `HEALTHCHECK`, and wire Container App probes plus GLB origin probes to `/healthz/ready`.","Replace the static literal with a real liveness route, add `/healthz/ready` that probes downstream dependencies, register both routes in `mcp_server.py`, add a Docker `HEALTHCHECK`, and wire Container App probes plus GLB origin probes to `/healthz/ready`.","resiliency;P1-040"
+"P1-041: Retry coverage limited to OpenAI 429","Bug","2","2 - High","New","Finding: P1-041: Retry coverage limited to OpenAI 429
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: Retry logic exists only around the OpenAI 429 path. Cosmos 503, Search 503, Foundry transient errors, and Storage `ServiceRequestError` all surface immediately as user-visible 5xx. In a single-region setup the inconsistency hurts UX; in active/active there is no shared retry budget, so a single transient blip in any non-OpenAI dependency aborts plans that could have ridden out a sub-second disturbance.
+
+File: src/backend/common/resilience/azure_retry.py
+
+```python
+# (file does not exist; retries scattered across modules,
+# only OpenAI 429 path has a tight loop)
+```
+
+Recommended Fix: Create a shared `azure_retry` module exposing a `with_retry(dependency, attempts, ceiling)` decorator built on `tenacity`, define per-dependency budgets (Cosmos 5×8s, Search 3×4s, Foundry 3×8s, Storage 4×8s, OpenAI 5×60s), and apply at every SDK call site.","Create a shared `azure_retry` module exposing a `with_retry(dependency, attempts, ceiling)` decorator built on `tenacity`, define per-dependency budgets (Cosmos 5×8s, Search 3×4s, Foundry 3×8s, Storage 4×8s, OpenAI 5×60s), and apply at every SDK call site.","resiliency;P1-041"
+"P1-042: DefaultAzureCredential / MIC without `tenant_id`","Bug","2","2 - High","New","Finding: P1-042: DefaultAzureCredential / MIC without `tenant_id`
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `DefaultAzureCredential` and `ManagedIdentityCredential` are constructed without an explicit `tenant_id`. As the application moves from single-region to active/active, multi-tenant or guest scenarios can resolve to the wrong tenant in either region, producing intermittent `AADSTS50020`/`AADSTS500011` failures that look transient but are deterministic per user — and behave inconsistently across `{primaryRegion}` and `{secondaryRegion}`.
+
+File: src/backend/common/config/app_config.py:131,133,150,152
+
+```python
+from azure.identity.aio import DefaultAzureCredential, ManagedIdentityCredential
+
+self.credential = DefaultAzureCredential() # no tenant_id
+self._mic = ManagedIdentityCredential(client_id=os.environ.get(""AZURE_CLIENT_ID""))
+```
+
+Recommended Fix: Read `tenant_id = os.environ[""AZURE_TENANT_ID""]` at `AppConfig` init (fail fast if missing), pass `tenant_id` / `additionally_allowed_tenants` to credential constructors, and add middleware that asserts the Easy-Auth `tid` claim matches `AZURE_TENANT_ID`.","Read `tenant_id = os.environ[""AZURE_TENANT_ID""]` at `AppConfig` init (fail fast if missing), pass `tenant_id` / `additionally_allowed_tenants` to credential constructors, and add middleware that asserts the Easy-Auth `tid` claim matches `AZURE_TENANT_ID`.","resiliency;P1-042"
+"P1-043: No retry / backoff / fallback on `get_access_token`","Bug","2","2 - High","New","Finding: P1-043: No retry / backoff / fallback on `get_access_token`
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: `get_access_token` calls the credential directly with no retry, no jitter, and no fallback credential source. Moving from single-region to active/active makes a transient Entra ID token-endpoint glitch a hard 5xx for the user request that triggered it in either region, with no in-memory cache to ride out the blip — every request re-hits Entra ID.
+
+File: src/backend/common/config/app_config.py:170-176
+
+```python
+async def get_access_token(self, scope: str) -> str:
+ tok = await self._mic.get_token(scope) # no retry, no fallback, no cache
+ return tok.token
+```
+
+Recommended Fix: Wrap `get_token` with `tenacity` (4 attempts, jittered exponential up to 8s) on `ClientAuthenticationError`, cache tokens until close to expiry, and on permanent MIC failure attempt `DefaultAzureCredential` once before giving up.","Wrap `get_token` with `tenacity` (4 attempts, jittered exponential up to 8s) on `ClientAuthenticationError`, cache tokens until close to expiry, and on permanent MIC failure attempt `DefaultAzureCredential` once before giving up.","resiliency;P1-043"
+"P1-044: Single UAMI sole RBAC subject across data planes","Bug","2","2 - High","New","Finding: P1-044: Single UAMI sole RBAC subject across data planes
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: A single UAMI is the RBAC principal on Cosmos, Foundry, OpenAI, Search, Storage, and ACR. Moving from single-region to active/active does not isolate blast radius: a misconfigured role assignment, an accidental delete, or a rotation issue takes down access to every data plane in both regions simultaneously, and `{primaryRegion}` and `{secondaryRegion}` share the same single point of identity failure.
+
+File: infra/main.bicep:384-388
+
+```bicep
+resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+ name: 'id-${solutionPrefix}'
+ location: location
+}
+// same UAMI used as RBAC principal on every data plane
+```
+
+Recommended Fix: Split UAMIs by data-plane responsibility (`uami-data`, `uami-ai`, `uami-runtime`), assign only the narrowest role per plane (Cosmos `Cosmos DB Built-in Data Contributor`, Search `Search Index Data Reader` + `Search Service Contributor`, Storage `Storage Blob Data Contributor`, Foundry `Cognitive Services User`, ACR `AcrPull`), and add a startup self-test against each plane.","Split UAMIs by data-plane responsibility (`uami-data`, `uami-ai`, `uami-runtime`), assign only the narrowest role per plane (Cosmos `Cosmos DB Built-in Data Contributor`, Search `Search Index Data Reader` + `Search Service Contributor`, Storage `Storage Blob Data Contributor`, Foundry `Cognitive Services User`, ACR `AcrPull`), and add a startup self-test against each plane.","resiliency;P1-044"
+"P1-045: Container Apps `ingressExternal: true`","Bug","2","2 - High","New","Finding: P1-045: Container Apps `ingressExternal: true`
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The backend Container App is configured with `ingressExternal: true` unconditionally and is publicly reachable. Moving from single-region to active/active means both regions expose the backend publicly once GLB routes traffic, bypassing the GLB / App Gateway and inflating attack surface across both regions during cutover.
+
+File: infra/main.bicep:1217
+
+```bicep
+module backend 'br/public:avm/res/app/container-app:0.x.y' = {
+ params: {
+ ingressExternal: true
+ ingressTargetPort: 8000
+ }
+}
+```
+
+Recommended Fix: Replace `ingressExternal: true` with `external: !enablePrivateNetworking`; in private mode front the Container App with an internal App Gateway / GLB origin via Private Link; in public mode keep external true but enforce CORS allow-list (cross-ref P2-017) and Easy Auth (cross-ref P0-026).","Replace `ingressExternal: true` with `external: !enablePrivateNetworking`; in private mode front the Container App with an internal App Gateway / GLB origin via Private Link; in public mode keep external true but enforce CORS allow-list (cross-ref P2-017) and Easy Auth (cross-ref P0-026).","resiliency;P1-045"
+"P1-046: App Service publicNetworkAccess Enabled","Bug","2","2 - High","New","Finding: P1-046: App Service publicNetworkAccess Enabled
+
+Priority: P1
+
+Resiliency Related: Yes
+
+Issue: The App Service is created with `publicNetworkAccess: 'Enabled'` regardless of `enablePrivateNetworking`. Moving from single-region to active/active means the SPA origin is publicly reachable in both regions outside the GLB / Front Door path, so direct-to-origin requests bypass GLB-controlled routing, WAF, and rate limits — the active/active topology no longer enforces a single ingress contract.
+
+File: infra/main.bicep:1572
+
+```bicep
+resource webApp 'Microsoft.Web/sites@2023-12-01' = {
+ name: 'app-${solutionPrefix}'
+ properties: {
+ serverFarmId: webPlan.id
+ publicNetworkAccess: 'Enabled' // Always enabling the public network access for Web App
+ }
+}
+```
+
+Recommended Fix: Set `publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'`, in public mode allow only `AzureFrontDoor.Backend` with `x-azure-fdid` header, and in private mode provision a Private Endpoint and bind the GLB to the PE-fronted FQDN. Mirror across both regions.","Set `publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'`, in public mode allow only `AzureFrontDoor.Backend` with `x-azure-fdid` header, and in private mode provision a Private Endpoint and bind the GLB to the PE-fronted FQDN. Mirror across both regions.","resiliency;P1-046"
+"P2-001: Application Insights single regional component","Task","3","3 - Medium","New","Finding: P2-001: Application Insights single regional component
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: Application Insights is provisioned as a single regional component gated on `enableMonitoring`, and the connection string is treated as a required environment variable. Telemetry topology behaves identically in single-region and active/active deployments, but a missed `enableMonitoring=true` toggle silently disables monitoring across the entire surface. The gap is observability coverage hygiene, not failover.
+
+File: infra/main.bicep:366-379
+
+```bicep
+module appInsights 'br/public:avm/res/insights/component:0.x.y' = if (enableMonitoring) {
+ name: 'appi-${location}'
+ params: {
+ name: 'appi-${solutionPrefix}-${location}'
+ workspaceResourceId: logAnalytics.outputs.resourceId
+ location: location
+ }
+}
+```
+
+Recommended Fix: Default `enableMonitoring=true` for non-dev environments, provision an Application Insights component per region bound to the local Log Analytics workspace, and treat `APPLICATIONINSIGHTS_CONNECTION_STRING` as optional in `app_config` with a degraded-mode startup banner. Surface the resolved telemetry region in `/healthz` output so operators can verify wiring.","Default `enableMonitoring=true` for non-dev environments, provision an Application Insights component per region bound to the local Log Analytics workspace, and treat `APPLICATIONINSIGHTS_CONNECTION_STRING` as optional in `app_config` with a degraded-mode startup banner. Surface the resolved telemetry region in `/healthz` output so operators can verify wiring.","resiliency;P2-001"
+"P2-002: Log Analytics workspace single-region by default","Task","3","3 - Medium","New","Finding: P2-002: Log Analytics workspace single-region by default
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The Log Analytics workspace is single-region by default; cross-region replication is gated on `enableRedundancy` with the replica region fixed by a hard-coded paired-region map. Workspace topology is a deploy-time IaC choice that behaves identically at runtime in single-region and active/active. The gap is best-practice coverage of the workspace contract, not failover behaviour.
+
+File: infra/main.bicep:290-340
+
+```bicep
+param logAnalyticsReplicaLocation string = paired[location]
+module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.x.y' = {
+ params: {
+ replication: enableRedundancy ? { location: logAnalyticsReplicaLocation } : null
+ }
+}
+```
+
+Recommended Fix: Default `enableRedundancy=true` in production parameter files, expose a `logAnalyticsReplicaLocation` parameter that overrides the paired-region map, and document the BYO workspace pattern in `docs/re-use-log-analytics.md`.","Default `enableRedundancy=true` in production parameter files, expose a `logAnalyticsReplicaLocation` parameter that overrides the paired-region map, and document the BYO workspace pattern in `docs/re-use-log-analytics.md`.","resiliency;P2-002"
+"P2-003: Cosmos paired-region table covers only 10 regions","Task","3","3 - Medium","New","Finding: P2-003: Cosmos paired-region table covers only 10 regions
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The `cosmosDbZoneRedundantHaRegionPairs` lookup table in `infra/main.bicep` enumerates only 10 regions, and the variable `cosmosDbHaLocation = cosmosDbZoneRedundantHaRegionPairs[location]` returns `null` if the deploy `location` is not a key. This is an IaC-completeness gap whose behavior is identical in single-region and active/active deployments — once a supported region is chosen, runtime is unaffected. The risk is a silent deploy-time disablement of HA wiring rather than a regional failover concern.
+
+File: infra/main.bicep:191-203
+
+```bicep
+var cosmosDbZoneRedundantHaRegionPairs = {
+ australiaeast: 'uksouth'
+ centralus: 'eastus2'
+ eastasia: 'southeastasia'
+ eastus: 'centralus'
+ eastus2: 'centralus'
+ japaneast: 'australiaeast'
+ northeurope: 'westeurope'
+ southeastasia: 'eastasia'
+ uksouth: 'westeurope'
+ westeurope: 'northeurope'
+}
+var cosmosDbHaLocation = cosmosDbZoneRedundantHaRegionPairs[location]
+```
+
+Recommended Fix: Replace the silent `null` fallback with a Bicep `assert` that fails the deployment when `location` is not in the table, and add a `cosmosDbHaLocationOverride` parameter so operators can explicitly opt in for unlisted regions. Cite the canonical Microsoft paired-regions documentation in a Bicep comment so future maintainers can refresh the table.","Replace the silent `null` fallback with a Bicep `assert` that fails the deployment when `location` is not in the table, and add a `cosmosDbHaLocationOverride` parameter so operators can explicitly opt in for unlisted regions. Cite the canonical Microsoft paired-regions documentation in a Bicep comment so future maintainers can refresh the table.","resiliency;P2-003"
+"P2-004: Cosmos `defaultConsistencyLevel` not set","Task","3","3 - Medium","New","Finding: P2-004: Cosmos `defaultConsistencyLevel` not set
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The Cosmos AVM module call does not pin `defaultConsistencyLevel`, so the account inherits the AVM default (`Session`) implicitly. Runtime behaviour is identical in single-region and active/active because the level is the same in both, but the contract is unverifiable from IaC and can drift under module upgrades. The gap is contract-clarity hygiene.
+
+File: infra/main.bicep:1043-1128
+
+```bicep
+consistencyPolicy: {
+ defaultConsistencyLevel: 'Session'
+}
+```
+
+Recommended Fix: Pin `defaultConsistencyLevel: 'Session'` (or the chosen level) on the Cosmos AVM call, document the chosen level in `docs/`, and emit a startup log line recording the resolved account-level consistency.","Pin `defaultConsistencyLevel: 'Session'` (or the chosen level) on the Cosmos AVM call, document the chosen level in `docs/`, and emit a startup log line recording the resolved account-level consistency.","resiliency;P2-004"
+"P2-005: Hot-path queries miss `/session_id` partition key","Task","3","3 - Medium","New","Finding: P2-005: Hot-path queries miss `/session_id` partition key
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: Multiple hot-path Cosmos queries (`get_plan_by_plan_id`, `get_all_plans`, `get_team*`, `delete_plan_by_plan_id`) omit `session_id`, forcing cross-partition fan-out on every call. Query shape is inefficient regardless of region count, and behaves identically in single-region and active/active. The gap is query-shape performance hygiene.
+
+File: src/backend/common/database/cosmosdb.py:189-200
+
+```python
+async def get_plan_by_plan_id(self, plan_id: str, session_id: str) -> Plan | None:
+ query = ""SELECT * FROM c WHERE c.id = @id AND c.data_type = 'plan'""
+ params = [{""name"": ""@id"", ""value"": plan_id}]
+ async for item in self._container.query_items(
+ query=query, parameters=params, partition_key=session_id
+ ):
+ return Plan(**item)
+ return None
+```
+
+Recommended Fix: Thread `session_id` (or the model's partition key) through callers and pass `partition_key=` on `query_items` and `read_item`. For lookups that genuinely span sessions, add a secondary index strategy (materialized view container) and add an integration test asserting an RU charge ceiling per query.","Thread `session_id` (or the model's partition key) through callers and pass `partition_key=` on `query_items` and `read_item`. For lookups that genuinely span sessions, add a secondary index strategy (materialized view container) and add an integration test asserting an RU charge ceiling per query.","resiliency;P2-005"
+"P2-006: `DatabaseFactory` not closed on lifespan shutdown","Task","3","3 - Medium","New","Finding: P2-006: `DatabaseFactory` not closed on lifespan shutdown
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: `DatabaseFactory.close_all()` exists but is never invoked from the FastAPI `lifespan` shutdown hook, leaving the cached `CosmosClient` open until process exit. Resource leak only manifests at shutdown, identically in single-region and active/active deployments. The gap is lifecycle hygiene around SDK client cleanup.
+
+File: src/backend/common/database/database_factory.py:39-58
+
+```python
+from contextlib import asynccontextmanager
+from common.database.database_factory import DatabaseFactory
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+ yield
+ await DatabaseFactory.close_all()
+```
+
+Recommended Fix: Await `DatabaseFactory.close_all()` after `yield` in the FastAPI `lifespan` context manager, audit other singletons (Search, Storage, OpenAI) for matching `aclose` hooks, and add a unit test that exercises lifespan shutdown.","Await `DatabaseFactory.close_all()` after `yield` in the FastAPI `lifespan` context manager, audit other singletons (Search, Storage, OpenAI) for matching `aclose` hooks, and add a unit test that exercises lifespan shutdown.","resiliency;P2-006"
+"P2-007: Cosmos backup policy not set in IaC","Task","3","3 - Medium","New","Finding: P2-007: Cosmos backup policy not set in IaC
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The Cosmos AVM module call does not pass `backupPolicyType` or related fields, so the account inherits the default 4-hour periodic policy. Backup posture is identical regardless of region count, and serverless mode also blocks continuous backup (PITR). The gap is data-protection best practice, not regional failover.
+
+File: infra/main.bicep:1043-1128
+
+```bicep
+backupPolicy: {
+ type: 'Continuous'
+ continuousModeProperties: { tier: 'Continuous30Days' }
+}
+```
+
+Recommended Fix: Pin `backupPolicyType` and retention on the Cosmos AVM module, evaluate moving off serverless to enable `Continuous` (PITR) where the SKU allows, and document the chosen RPO in `docs/`.","Pin `backupPolicyType` and retention on the Cosmos AVM module, evaluate moving off serverless to enable `Continuous` (PITR) where the SKU allows, and document the chosen RPO in `docs/`.","resiliency;P2-007"
+"P2-008: Storage blob versioning / PITR / change feed disabled","Task","3","3 - Medium","New","Finding: P2-008: Storage blob versioning / PITR / change feed disabled
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The Storage `blobServices` block sets only soft-delete and access tracking; `isVersioningEnabled`, `restorePolicy`, and `changeFeed` are not configured. Blob protection posture is identical in single-region and active/active. The gap is data-protection hygiene, not regional failover behaviour.
+
+File: infra/main.bicep:1642-1684
+
+```bicep
+blobServices: {
+ isVersioningEnabled: true
+ restorePolicy: { enabled: true, days: 7 }
+ changeFeed: { enabled: true, retentionInDays: 7 }
+ deleteRetentionPolicy: { enabled: true, days: 7 }
+}
+```
+
+Recommended Fix: Enable `isVersioningEnabled: true` with a `restorePolicy` window of at least 7 days, enable `changeFeed.enabled: true` for audit and replay, and document blob retention in the operator guide.","Enable `isVersioningEnabled: true` with a `restorePolicy` window of at least 7 days, enable `changeFeed.enabled: true` for audit and replay, and document blob retention in the operator guide.","resiliency;P2-008"
+"P2-009: `upload-batch --overwrite` without concurrency control","Task","3","3 - Medium","New","Finding: P2-009: `upload-batch --overwrite` without concurrency control
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: All `az storage blob upload-batch` calls use `--overwrite` with no ETag or `If-None-Match` guard, so a second operator running the same script clobbers the first one's uploads. Bulk-upload script behaviour is identical regardless of region count. The gap is operator-script idempotency hygiene, not regional failover.
+
+File: infra/scripts/Selecting-Team-Config-And-Data.ps1:702
+
+```powershell
+az storage blob lease acquire --container-name $container --blob-name ""upload.lock"" --lease-duration 60
+$runId = [guid]::NewGuid().ToString()
+az storage blob upload-batch --overwrite --metadata ""runId=$runId""
+az storage blob lease release --container-name $container --blob-name ""upload.lock""
+```
+
+Recommended Fix: Maintain a manifest blob recording the last-good upload and operator id, acquire a lease on a `lock` blob before running the batch, and stamp uploaded blobs with a run id metadata header.","Maintain a manifest blob recording the last-good upload and operator id, acquire a lease on a `lock` blob before running the batch, and stamp uploaded blobs with a run id metadata header.","resiliency;P2-009"
+"P2-010: Cosmos `Session` consistency not pinned","Task","3","3 - Medium","New","Finding: P2-010: Cosmos `Session` consistency not pinned
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: Cosmos `Session` consistency is inherited from AVM defaults, and per-replica `CosmosClient` instances scope session tokens locally. Runtime behaviour is identical in single-region and active/active because the level is the same in both, but the contract is unverifiable from code. The gap is contract-clarity hygiene parallel to P2-004.
+
+File: src/backend/common/database/cosmosdb.py:62-64
+
+```python
+CosmosClient(
+ url=endpoint,
+ credential=credential,
+ consistency_level=""Session"",
+)
+```
+
+Recommended Fix: Pin `consistency_level=""Session""` on `CosmosClient` construction. If session continuity matters across requests, propagate the response session token through cookies or headers to the next request, and add tests for read-your-writes within a session.","Pin `consistency_level=""Session""` on `CosmosClient` construction. If session continuity matters across requests, propagate the response session token through cookies or headers to the next request, and add tests for read-your-writes within a session.","resiliency;P2-010"
+"P2-011: Telemetry exporter drops events silently","Task","3","3 - Medium","New","Finding: P2-011: Telemetry exporter drops events silently
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: `azure-monitor-opentelemetry` configuration and `track_event` calls return without raising on exporter failure, so live metrics blackouts during incidents look identical to a healthy boot. Silent-drop behaviour is the same in single-region and active/active topologies. The gap is observability hygiene around exporter health, not regional failover.
+
+File: src/backend/app.py:80-99
+
+```python
+import logging
+from azure.monitor.opentelemetry import configure_azure_monitor
+
+log = logging.getLogger(__name__)
+cs = os.environ.get(""APPLICATIONINSIGHTS_CONNECTION_STRING"")
+if cs:
+ try:
+ configure_azure_monitor(connection_string=cs)
+ except Exception as ex:
+ log.error(""telemetry.exporter.init_failed"", exc_info=ex)
+else:
+ log.warning(""telemetry.degraded=true reason=missing_connection_string"")
+```
+
+Recommended Fix: Wrap `configure_azure_monitor` in a try/except block that logs an ERROR with the exception, treat `APPLICATIONINSIGHTS_CONNECTION_STRING` as optional with a clear degraded-mode startup banner, and add a periodic exporter heartbeat task whose state is reflected in `/healthz`.","Wrap `configure_azure_monitor` in a try/except block that logs an ERROR with the exception, treat `APPLICATIONINSIGHTS_CONNECTION_STRING` as optional with a clear degraded-mode startup banner, and add a periodic exporter heartbeat task whose state is reflected in `/healthz`.","resiliency;P2-011"
+"P2-012: Pinned Microsoft Python SDKs and version drift","Task","3","3 - Medium","New","Finding: P2-012: Pinned Microsoft Python SDKs and version drift
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: `src/backend/requirements.txt`, `src/mcp_server/requirements.txt`, and operator scripts under `infra/scripts/` pin different versions of `azure-identity` and related Microsoft SDKs (for example `azure-identity==1.24.0` in the backend versus `1.19.0` in MCP), and some entries are beta releases such as `azure-ai-inference==1.0.0b9`. This behaves identically in single-region and active/active deployments — version drift and yank risk affect rebuilds, not runtime in either region. Drift also leaves failover semantics inconsistent across components.
+
+File: src/backend/requirements.txt:3-6
+
+```text
+fastapi==0.116.1
+uvicorn==0.35.0
+azure-cosmos==4.9.0
+azure-monitor-opentelemetry==1.8.5
+azure-monitor-events-extension==0.1.0
+azure-identity==1.24.0
+python-dotenv==1.1.1
+```
+
+Recommended Fix: Introduce a top-level `constraints.txt` referenced by every `requirements.txt`, move beta pins to GA where available, and mirror critical wheels to a private feed (cross-ref P3-007) so rebuilds do not depend on PyPI availability.","Introduce a top-level `constraints.txt` referenced by every `requirements.txt`, move beta pins to GA where available, and mirror critical wheels to a private feed (cross-ref P3-007) so rebuilds do not depend on PyPI availability.","resiliency;P2-012"
+"P2-013: GitHub Actions tag-pinned, not SHA-pinned","Task","3","3 - Medium","New","Finding: P2-013: GitHub Actions tag-pinned, not SHA-pinned
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: Every reusable GitHub Action in `.github/workflows/` is referenced by a moving tag (for example `actions/checkout@v4`, `Azure/setup-azd@v2`, `azure/login@v2`) rather than by an immutable commit SHA. This behaves identically in single-region and active/active deployments — tag mutability is a CI/CD concern, not a runtime resiliency one. A compromised or retagged action could ship arbitrary code into the next build without any code change in this repository.
+
+File: .github/workflows/azure-dev.yml:26
+
+```yaml
+steps:
+ - name: Checkout Code
+ uses: actions/checkout@v4
+
+ - name: Install azd
+ uses: Azure/setup-azd@v2
+
+ - name: Login to Azure
+ uses: azure/login@v2
+ with:
+ client-id: ${{ secrets.AZURE_CLIENT_ID }}
+ tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+```
+
+Recommended Fix: Replace every `uses: org/action@vN` reference with `uses: org/action@<full-40-char-sha> # vN`, document the bump policy in `CONTRIBUTING.md`, and add a CI check (for example `zgosalvez/github-actions-ensure-sha-pinned-actions`) that fails on non-SHA pins. Track Microsoft-owned actions on a separate (faster) cadence than third-party.","Replace every `uses: org/action@vN` reference with `uses: org/action@<full-40-char-sha> # vN`, document the bump policy in `CONTRIBUTING.md`, and add a CI check (for example `zgosalvez/github-actions-ensure-sha-pinned-actions`) that fails on non-SHA pins. Track Microsoft-owned actions on a separate (faster) cadence than third-party.","resiliency;P2-013"
+"P2-014: VNet `10.0.0.0/8` and subnets hardcoded","Task","3","3 - Medium","New","Finding: P2-014: VNet `10.0.0.0/8` and subnets hardcoded
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The VNet module is invoked with a fixed `addressPrefixes: ['10.0.0.0/8']`, and every subnet CIDR inside `infra/modules/virtualNetwork.bicep` is hardcoded. This behaves identically in single-region and active/active deployments — address space is a deploy-time choice and does not change with region count. The default `/8` collides with most enterprise hub-and-spoke ranges and prevents BYO-VNet peering without code edits.
+
+File: infra/main.bicep:398-407
+
+```bicep
+module virtualNetwork 'modules/virtualNetwork.bicep' = if (enablePrivateNetworking) {
+ name: take('module.virtualNetwork.${solutionSuffix}', 64)
+ params: {
+ name: 'vnet-${solutionSuffix}'
+ location: location
+ tags: tags
+ enableTelemetry: enableTelemetry
+ addressPrefixes: ['10.0.0.0/8']
+ logAnalyticsWorkspaceId: logAnalyticsWorkspaceResourceId
+ resourceSuffix: solutionSuffix
+ }
+}
+```
+
+Recommended Fix: Promote the VNet address prefix and per-subnet prefixes to parameters in `infra/main.bicep`, default to a typical hub-and-spoke `/22`, and document peering and BYO-VNet guidance alongside the parameter declarations.","Promote the VNet address prefix and per-subnet prefixes to parameters in `infra/main.bicep`, default to a typical hub-and-spoke `/22`, and document peering and BYO-VNet guidance alongside the parameter declarations.","resiliency;P2-014"
+"P2-015: SAMI on Web/Storage while RBAC uses UAMI","Task","3","3 - Medium","New","Finding: P2-015: SAMI on Web/Storage while RBAC uses UAMI
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The Web Site module is configured with `managedIdentities: { systemAssigned: true }`, and the Storage account similarly enables a system-assigned identity, but every data-plane RBAC binding in `infra/main.bicep` references the shared User-Assigned Managed Identity. This behaves identically in single-region and active/active deployments — no code path resolves the SAMI today. The hazard is a latent footgun for future changes that pick the wrong identity.
+
+File: infra/main.bicep:1539-1541
+
+```bicep
+managedIdentities: {
+ systemAssigned: true
+}
+```
+
+Recommended Fix: Drop the SAMIs that have no role bindings, attach the shared UAMI to the Web Site and Storage account where data-plane access is required, and document the chosen identity model in the deployment guide.","Drop the SAMIs that have no role bindings, attach the shared UAMI to the Web Site and Storage account where data-plane access is required, and document the chosen identity model in the deployment guide.","resiliency;P2-015"
+"P2-016: No readiness gate for Entra RBAC propagation","Task","3","3 - Medium","New","Finding: P2-016: No readiness gate for Entra RBAC propagation
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: Role assignments for the UAMI on AI Foundry, Cosmos, Storage, and Search are emitted at deploy time with no post-deploy probe and no `dependsOn` chain that waits for propagation. This behaves identically in single-region and active/active deployments — the runtime steady state is the same once propagation completes. The hazard is a deploy-time window where the application can return 403 for several minutes immediately after a cold deployment.
+
+File: infra/main.bicep:856-870
+
+```bicep
+roleAssignments: [
+ {
+ roleDefinitionIdOrName: '53ca6127-db72-4b80-b1b0-d745d6d5456d' // Azure AI User
+ principalId: userAssignedIdentity.outputs.principalId
+ principalType: 'ServicePrincipal'
+ }
+ {
+ roleDefinitionIdOrName: '64702f94-c441-49e6-a78b-ef80e0188fee' // Azure AI Developer
+ principalId: userAssignedIdentity.outputs.principalId
+ principalType: 'ServicePrincipal'
+ }
+ {
+ roleDefinitionIdOrName: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
+ principalId: userAssignedIdentity.outputs.principalId
+ principalType: 'ServicePrincipal'
+ }
+]
+```
+
+Recommended Fix: Add an `azd hook postdeploy` script that polls a representative data-plane call (Cosmos is typically slowest to propagate) until it returns 200, with a bounded retry budget. Block the deployment exit on the probe and repeat for Storage and Search.","Add an `azd hook postdeploy` script that polls a representative data-plane call (Cosmos is typically slowest to propagate) until it returns 200, with a bounded retry budget. Block the deployment exit on the probe and repeat for Storage and Search.","resiliency;P2-016"
+"P2-017: FastAPI `CORSMiddleware` `allow_origins=[""*""]`","Task","3","3 - Medium","New","Finding: P2-017: FastAPI `CORSMiddleware` `allow_origins=[""*""]`
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: `src/backend/app.py` registers `CORSMiddleware` with `allow_origins=[""*""]`, `allow_credentials=True`, and wildcard methods/headers, overriding the more restrictive Container App `corsPolicy` set in IaC. This behaves identically in single-region and active/active deployments — CORS is a code-defined concern that does not change with region count. Combining `*` origins with `allow_credentials=True` is also rejected by browsers under the CORS spec.
+
+File: src/backend/app.py:101-105
+
+```python
+app.add_middleware(
+ CORSMiddleware,
+ allow_origins=[""*""], # Allow all origins for development; restrict in production
+ allow_credentials=True,
+ allow_methods=[""*""],
+ allow_headers=[""*""],
+)
+```
+
+Recommended Fix: Restrict `allow_origins` to the configured SPA origin from `app_config`, narrow `allow_methods` to the verbs actually used, and align the values with the Container App `corsPolicy` so both layers agree.","Restrict `allow_origins` to the configured SPA origin from `app_config`, narrow `allow_methods` to the verbs actually used, and align the values with the Container App `corsPolicy` so both layers agree.","resiliency;P2-017"
+"P2-018: Startup identity-coupled with no degraded-mode","Task","3","3 - Medium","New","Finding: P2-018: Startup identity-coupled with no degraded-mode
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: `src/backend/app.py` constructs its Application Insights client and downstream SDK clients eagerly at startup, all of which depend on Entra token issuance succeeding before the FastAPI process can serve traffic. This behaves identically in single-region and active/active deployments — cold-start failure mode is independent of region count. There is no degraded-mode path that allows the process to start when token acquisition is briefly unavailable.
+
+File: src/backend/app.py:80-96
+
+```python
+app = FastAPI(lifespan=lifespan)
+
+frontend_url = config.FRONTEND_SITE_NAME
+# Configure Azure Monitor and instrument FastAPI for OpenTelemetry
+if config.APPLICATIONINSIGHTS_CONNECTION_STRING:
+ configure_azure_monitor(
+ connection_string=config.APPLICATIONINSIGHTS_CONNECTION_STRING,
+ enable_live_metrics=True
+ )
+ FastAPIInstrumentor.instrument_app(app, excluded_urls=""socket,ws"")
+ logging.info(""Application Insights configured with live metrics and WebSocket filtering"")
+else:
+ logging.warning(
+ ""No Application Insights connection string found. Telemetry disabled.""
+ )
+```
+
+Recommended Fix: Defer non-essential client construction to first-use behind a cached factory, add a startup readiness probe that retries on `get_token` errors with exponential backoff, and surface degraded mode in `/healthz` so operators can distinguish ""not yet authenticated"" from ""broken"".","Defer non-essential client construction to first-use behind a cached factory, add a startup readiness probe that retries on `get_token` errors with exponential backoff, and surface degraded mode in `/healthz` so operators can distinguish ""not yet authenticated"" from ""broken"".","resiliency;P2-018"
+"P2-019: AI Foundry `networkAcls.defaultAction: Allow`","Task","3","3 - Medium","New","Finding: P2-019: AI Foundry `networkAcls.defaultAction: Allow`
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: AI Foundry is provisioned with `networkAcls.defaultAction: 'Allow'` and empty `virtualNetworkRules` / `ipRules`, regardless of the `enablePrivateNetworking` toggle. This behaves identically in single-region and active/active deployments — ACL configuration is a deploy-time choice unchanged across regions. The result is that the private-networking flag does not actually tighten AI Foundry's ingress posture.
+
+File: infra/main.bicep:928-933
+
+```bicep
+networkAcls: {
+ defaultAction: 'Allow'
+ virtualNetworkRules: []
+ ipRules: []
+}
+```
+
+Recommended Fix: Set `networkAcls.defaultAction: 'Deny'` whenever `enablePrivateNetworking` is true, populate `virtualNetworkRules` with the workload subnet, and document the chosen posture.","Set `networkAcls.defaultAction: 'Deny'` whenever `enablePrivateNetworking` is true, populate `virtualNetworkRules` with the workload subnet, and document the chosen posture.","resiliency;P2-019"
+"P2-020: Storage `networkAcls.bypass: AzureServices`","Task","3","3 - Medium","New","Finding: P2-020: Storage `networkAcls.bypass: AzureServices`
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The Storage account is provisioned with `networkAcls.bypass: 'AzureServices'` while public network access is otherwise disabled, allowing any first-party Azure service principal to reach the data plane. This behaves identically in single-region and active/active deployments — the bypass setting is a deploy-time posture choice. The configuration is inconsistent with the rest of the stack, which assumes private endpoints are the only ingress path.
+
+File: infra/main.bicep:1642-1684
+
+```bicep
+blobServices: {
+ automaticSnapshotPolicyEnabled: true
+ containerDeleteRetentionPolicyDays: 10
+ containerDeleteRetentionPolicyEnabled: true
+ containers: [
+ // ...containers omitted for brevity...
+ ]
+ deleteRetentionPolicyDays: 9
+ deleteRetentionPolicyEnabled: true
+ lastAccessTimeTrackingPolicyEnabled: true
+}
+// networkAcls block (current):
+// networkAcls: {
+// bypass: 'AzureServices'
+// defaultAction: 'Deny'
+// }
+```
+
+Recommended Fix: Set `bypass: 'None'`, enumerate any genuinely required Azure-service exceptions explicitly, and pair the change with `defaultAction: 'Deny'` plus VNet rules covering the workload subnets.","Set `bypass: 'None'`, enumerate any genuinely required Azure-service exceptions explicitly, and pair the change with `defaultAction: 'Deny'` plus VNet rules covering the workload subnets.","resiliency;P2-020"
+"P2-021: No route tables, NAT Gateway, or DDoS plan","Task","3","3 - Medium","New","Finding: P2-021: No route tables, NAT Gateway, or DDoS plan
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: The VNet is created without route tables, without a NAT Gateway, and without a DDoS Protection plan attached. This behaves identically in single-region and active/active deployments — traffic-shaping controls are a network-design choice unchanged with region count. Outbound flows from Container Apps default to platform SNAT, which is exhaustion-prone under bursty workloads.
+
+File: infra/main.bicep:398-407
+
+```bicep
+module virtualNetwork 'modules/virtualNetwork.bicep' = if (enablePrivateNetworking) {
+ name: take('module.virtualNetwork.${solutionSuffix}', 64)
+ params: {
+ name: 'vnet-${solutionSuffix}'
+ location: location
+ tags: tags
+ enableTelemetry: enableTelemetry
+ addressPrefixes: ['10.0.0.0/8']
+ logAnalyticsWorkspaceId: logAnalyticsWorkspaceResourceId
+ resourceSuffix: solutionSuffix
+ }
+}
+```
+
+Recommended Fix: Attach a NAT Gateway with a dedicated public IP to the workload subnets, add route tables for forced-tunneling scenarios, and gate DDoS Protection Standard behind a parameter for production parameter files.","Attach a NAT Gateway with a dedicated public IP to the workload subnets, add route tables for forced-tunneling scenarios, and gate DDoS Protection Standard behind a parameter for production parameter files.","resiliency;P2-021"
+"P2-022: Insufficient observability for silent-failure triage","Task","3","3 - Medium","New","Finding: P2-022: Insufficient observability for silent-failure triage
+
+Priority: P2
+
+Resiliency Related: No
+
+Issue: Health probes, correlation IDs, structured logging, dependency-call telemetry, and business metrics are minimal or absent, and some transaction-critical paths still use `print(...)`. Telemetry depth does not change with region count, so silent failures stay silent in both single-region and active/active. The gap is observability hygiene, not failover signalling.
+
+File: src/backend/app.py:108
+
+```python
+import logging, json
+class JsonFormatter(logging.Formatter):
+ def format(self, record):
+ payload = {""level"": record.levelname, ""msg"": record.getMessage(), ""logger"": record.name}
+ for k in (""traceId"", ""spanId"", ""userId"", ""correlationId""):
+ if hasattr(record, k):
+ payload[k] = getattr(record, k)
+ return json.dumps(payload)
+```
+
+Recommended Fix: Add structured JSON logging with `traceId`, `spanId`, `userId`, and `correlationId` propagated via OTel context, replace `print(...)` calls on transaction-critical paths with structured loggers, emit dependency-call telemetry for Cosmos / Search / OpenAI, and add a `correlationId` middleware that surfaces `x-correlation-id` on every response.","Add structured JSON logging with `traceId`, `spanId`, `userId`, and `correlationId` propagated via OTel context, replace `print(...)` calls on transaction-critical paths with structured loggers, emit dependency-call telemetry for Cosmos / Search / OpenAI, and add a `correlationId` middleware that surfaces `x-correlation-id` on every response.","resiliency;P2-022"
+"P3-001: DCR for jumpbox tied to single workspace","Task","4","4 - Low","New","Finding: P3-001: DCR for jumpbox tied to single workspace
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: The jumpbox Data Collection Rule routes operator-only performance and security event telemetry to a single regional Log Analytics workspace, conditional on `enablePrivateNetworking && enableMonitoring`. This is operator-only telemetry; application behavior is unchanged regardless of topology.
+
+File: infra/main.bicep:481-577
+
+```bicep
+module windowsVmDataCollectionRules 'br/public:avm/res/insights/data-collection-rule:0.11.0' = if (enablePrivateNetworking && enableMonitoring) {
+ name: take('avm.res.insights.data-collection-rule.${dataCollectionRulesResourceName}', 64)
+ params: {
+ name: dataCollectionRulesResourceName
+ tags: tags
+ enableTelemetry: enableTelemetry
+ location: dataCollectionRulesLocation
+ dataCollectionRuleProperties: {
+ kind: 'Windows'
+ destinations: {
+ logAnalytics: [
+ {
+ workspaceResourceId: logAnalyticsWorkspaceResourceId
+ name: 'la--1264800308'
+ }
+ ]
+ }
+ // ...dataSources / dataFlows omitted...
+ }
+ }
+}
+```
+
+Recommended Fix: Mirror the DCR resource into the `{secondaryRegion}` workspace when DR replication is enabled, document the operator-only telemetry scope in module headers, and confirm retention parity across regions.","Mirror the DCR resource into the `{secondaryRegion}` workspace when DR replication is enabled, document the operator-only telemetry scope in module headers, and confirm retention parity across regions.","resiliency;P3-001"
+"P3-002: Sync and async `CosmosClient` coexist","Task","4","4 - Low","New","Finding: P3-002: Sync and async `CosmosClient` coexist
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: A synchronous `CosmosClient` is constructed in `app_config.get_cosmos_database_client` while the request path uses an async client through `DatabaseFactory`. The sync path is dead code with no production caller; behavior unchanged regardless of topology.
+
+File: src/backend/common/config/app_config.py:219-237
+
+```python
+from azure.cosmos import CosmosClient
+
+class AppConfig:
+ def get_cosmos_database_client(self):
+ """"""Get a Cosmos DB client for the configured database.""""""
+ try:
+ if self._cosmos_client is None:
+ self._cosmos_client = CosmosClient(
+ self.COSMOSDB_ENDPOINT,
+ credential=self.get_azure_credential(self.AZURE_CLIENT_ID),
+ )
+ if self._cosmos_database is None:
+ self._cosmos_database = self._cosmos_client.get_database_client(
+ self.COSMOSDB_DATABASE
+ )
+ return self._cosmos_database
+ except Exception as exc:
+ logging.error(""Failed to create CosmosDB client: %s"", exc)
+ raise
+```
+
+Recommended Fix: Remove the unused synchronous client from `app_config`, standardize on the async client through `DatabaseFactory`, and add a lint rule against `azure.cosmos.CosmosClient` (sync) imports.","Remove the unused synchronous client from `app_config`, standardize on the async client through `DatabaseFactory`, and add a lint rule against `azure.cosmos.CosmosClient` (sync) imports.","resiliency;P3-002"
+"P3-003: `delete_*` returns `True` regardless of outcome","Task","4","4 - Low","New","Finding: P3-003: `delete_*` returns `True` regardless of outcome
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: `delete_team` returns `True` even when no document was found, and sibling delete helpers rely on a truthy `AsyncItemPaged`. The caller cannot distinguish ""deleted N"", ""not found"", or ""transient failure""; behavior unchanged regardless of topology.
+
+File: src/backend/common/database/cosmosdb.py:317-336
+
+```python
+async def delete_team(self, team_id: str) -> bool:
+ """"""Delete a team configuration by team_id.""""""
+ await self._ensure_initialized()
+ try:
+ team = await self.get_team(team_id)
+ print(team)
+ if team:
+ await self.delete_item(item_id=team.id, partition_key=team.session_id)
+ return True
+ except Exception as e:
+ logging.exception(f""Failed to delete team from Cosmos DB: {e}"")
+ return False
+```
+
+Recommended Fix: Return a structured `DeleteResult` (count or status enum) distinguishing `deleted`, `not_found`, and `error`; update callers to handle the new contract; add unit tests for each branch.","Return a structured `DeleteResult` (count or status enum) distinguishing `deleted`, `not_found`, and `error`; update callers to handle the new contract; add unit tests for each branch.","resiliency;P3-003"
+"P3-004: Easy Auth fallback to `sample_user` principal","Task","4","4 - Low","New","Finding: P3-004: Easy Auth fallback to `sample_user` principal
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: When `x-ms-client-principal-id` is absent, the backend falls back to a `sample_user` principal embedded in source. Latent today because `AUTH_ENABLED=false` by default; behavior unchanged regardless of topology, but the fallback is a hygiene defect.
+
+File: src/backend/auth/auth_utils.py:5-32
+
+```python
+def get_authenticated_user_details(request_headers):
+ user_object = {}
+ if ""x-ms-client-principal-id"" not in request_headers:
+ logging.info(""No user principal found in headers"")
+ # if it's not, assume we're in development mode and return a default user
+ from . import sample_user
+ raw_user_object = sample_user.sample_user
+ else:
+ raw_user_object = {k: v for k, v in request_headers.items()}
+ # ...normalize headers and populate user_object...
+ return user_object
+```
+
+Recommended Fix: Fail closed (`401`) when the header is absent in non-dev environments; gate the `sample_user` fallback behind an explicit `DEV_MODE` flag; provision Easy Auth via IaC if production relies on it.","Fail closed (`401`) when the header is absent in non-dev environments; gate the `sample_user` fallback behind an explicit `DEV_MODE` flag; provision Easy Auth via IaC if production relies on it.","resiliency;P3-004"
+"P3-005: MCP `JWTVerifier` JWKS unreachable when auth enabled","Task","4","4 - Low","New","Finding: P3-005: MCP `JWTVerifier` JWKS unreachable when auth enabled
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: When `ENABLE_AUTH=true`, FastMCP `JWTVerifier` rejects requests if it cannot fetch JWKS from Entra. Latent today because auth is disabled by default; behavior unchanged regardless of topology, but a JWKS outage with no cache fallback is a completeness gap.
+
+File: src/mcp_server/mcp_server.py:33-50
+
+```python
+def create_fastmcp_server():
+ """"""Create and configure FastMCP server.""""""
+ auth = None
+ if config.enable_auth:
+ auth_config = {
+ ""jwks_uri"": config.jwks_uri,
+ ""issuer"": config.issuer,
+ ""audience"": config.audience,
+ }
+ if all(auth_config.values()):
+ auth = JWTVerifier(
+ jwks_uri=auth_config[""jwks_uri""],
+ issuer=auth_config[""issuer""],
+ algorithm=""RS256"",
+ audience=auth_config[""audience""],
+ )
+ mcp_server = factory.create_mcp_server(name=config.server_name, auth=auth)
+ return mcp_server
+```
+
+Recommended Fix: Cache JWKS aggressively with TTL and refresh-on-failure semantics, add a JWKS reachability probe to `/health`, and document the auth-on rollout path.","Cache JWKS aggressively with TTL and refresh-on-failure semantics, add a JWKS reachability probe to `/health`, and document the auth-on rollout path.","resiliency;P3-005"
+"P3-006: External base-image registries used at build time","Task","4","4 - Low","New","Finding: P3-006: External base-image registries used at build time
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: Image builds depend on Docker Hub (`python:3.11-slim-bullseye`), MCR, and `ghcr.io` (`astral-sh/uv:0.6.3`) for base images. Rebuild-time concern only; live runtime is unaffected once images are in ACR, so behavior is unchanged regardless of topology.
+
+File: src/backend/Dockerfile:2
+
+```dockerfile
+FROM python:3.11-slim-bullseye AS base
+WORKDIR /app
+
+FROM base AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.6.3 /uv /uvx /bin/
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+```
+
+Recommended Fix: Mirror base images to a private registry (ACR), pin base images by `@sha256:` digest in all Dockerfiles, and track a CVE / refresh cadence.","Mirror base images to a private registry (ACR), pin base images by `@sha256:` digest in all Dockerfiles, and track a CVE / refresh cadence.","resiliency;P3-006"
+"P3-007: PyPI / npm reachable at deploy-script time","Task","4","4 - Low","New","Finding: P3-007: PyPI / npm reachable at deploy-script time
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: Operator post-deploy scripts and frontend packaging run `pip install -r infra/scripts/requirements.txt` and `npm install` against public registries with no `--index-url` / `--registry` overrides. Rebuild- and operator-script concern only; behavior unchanged regardless of topology at runtime.
+
+File: infra/scripts/Selecting-Team-Config-And-Data.ps1:542
+
+```powershell
+# Install the requirements
+Write-Host ""Installing requirements""
+pip install --quiet -r infra/scripts/requirements.txt
+Write-Host ""Requirements installed""
+```
+
+Recommended Fix: Pin `azure-core` and other deps in `infra/scripts/requirements.txt`, pre-install dependencies into images where feasible, and configure private package mirrors for DR scenarios.","Pin `azure-core` and other deps in `infra/scripts/requirements.txt`, pre-install dependencies into images where feasible, and configure private package mirrors for DR scenarios.","resiliency;P3-007"
+"P3-008: Microsoft Entra ID is the global identity plane","Task","4","4 - Low","New","Finding: P3-008: Microsoft Entra ID is the global identity plane
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: Microsoft Entra ID mediates every Azure data-plane call across all shared dependencies. Restated for completeness; behavior unchanged regardless of topology, with no discrete actionable fix beyond identity-related items already listed.
+
+File: src/backend/common/config/app_config.py:8
+
+```python
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
+from azure.identity.aio import (
+ DefaultAzureCredential as DefaultAzureCredentialAsync,
+ ManagedIdentityCredential as ManagedIdentityCredentialAsync,
+)
+# All Azure data-plane access flows through Entra-issued tokens via these credentials.
+```
+
+Recommended Fix: No discrete remediation. Cross-ref P1-007 (RBAC), P1-034 (token errors), P1-043 (token retry).","No discrete remediation. Cross-ref P1-007 (RBAC), P1-034 (token errors), P1-043 (token retry).","resiliency;P3-008"
+"P3-009: Container images use mutable `latest_v4` tag","Task","4","4 - Low","New","Finding: P3-009: Container images use mutable `latest_v4` tag
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: Backend, MCP, and frontend image references use the mutable `latest_v4` tag rather than an immutable `@sha256:` digest. Image-identity drift across cold-starts is a deploy-time concern; behavior unchanged regardless of topology once images are pinned.
+
+File: infra/main.bicep:141
+
+```bicep
+@description('Optional. The Container Image Tag to deploy on the backend.')
+param backendContainerImageTag string = 'latest_v4'
+
+@description('Optional. The Container Registry hostname where the docker images for the frontend are located.')
+param frontendContainerRegistryHostname string = 'biabcontainerreg.azurecr.io'
+
+@description('Optional. The Container Image Name to deploy on the frontend.')
+param frontendContainerImageName string = 'macaefrontend'
+```
+
+Recommended Fix: Reference images by `@sha256:` digest in `main.bicep` and `main_custom.bicep`; have the build pipeline emit digests as Bicep outputs / parameter overrides; recommend digest-pinning as the deployment contract.","Reference images by `@sha256:` digest in `main.bicep` and `main_custom.bicep`; have the build pipeline emit digests as Bicep outputs / parameter overrides; recommend digest-pinning as the deployment contract.","resiliency;P3-009"
+"P3-010: `HealthCheckMiddleware` registered with empty password","Task","4","4 - Low","New","Finding: P3-010: `HealthCheckMiddleware` registered with empty password
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: The middleware is constructed with `password=""""` and `checks={}`. Inert today, but an empty-string credential literal embedded in middleware construction is a hygiene defect; behavior unchanged regardless of topology.
+
+File: src/backend/app.py:108
+
+```python
+# Configure health check
+app.add_middleware(HealthCheckMiddleware, password="""", checks={})
+# v4 endpoints
+app.include_router(app_v4)
+logging.info(""Added health check middleware"")
+```
+
+Recommended Fix: Remove the `password` argument from the call site explicitly — even though it is currently inert. Drop the parameter from the middleware signature, or resolve it from `app_config` / Key Vault and never from a literal. Pair with real dependency probes (cross-ref P0-025).","Remove the `password` argument from the call site explicitly — even though it is currently inert. Drop the parameter from the middleware signature, or resolve it from `app_config` / Key Vault and never from a literal. Pair with real dependency probes (cross-ref P0-025).","resiliency;P3-010"
+"P3-011: Uniform single-rule outbound NSGs across subnets","Task","4","4 - Low","New","Finding: P3-011: Uniform single-rule outbound NSGs across subnets
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: All subnets share the same single-rule outbound NSG pattern (`deny-hop-outbound` for 22 / 3389 only) with no per-subnet differentiation between apps, jumpbox, and private endpoints. Segmentation hygiene; behavior unchanged regardless of topology and identical across `{primaryRegion}` and `{secondaryRegion}`.
+
+File: infra/modules/virtualNetwork.bicep:19
+
+```bicep
+param subnets subnetType[] = [
+ {
+ name: 'backend'
+ addressPrefixes: ['10.0.0.0/27']
+ networkSecurityGroup: {
+ name: 'nsg-backend'
+ securityRules: [
+ {
+ name: 'deny-hop-outbound'
+ properties: {
+ access: 'Deny'
+ destinationAddressPrefix: '*'
+ destinationPortRanges: ['22', '3389']
+ direction: 'Outbound'
+ priority: 200
+ protocol: 'Tcp'
+ sourceAddressPrefix: 'VirtualNetwork'
+ sourcePortRange: '*'
+ }
+ }
+ ]
+ }
+ }
+ // ...containers, webserverfarm subnets repeat the same single rule...
+]
+```
+
+Recommended Fix: Differentiate egress rules per subnet (apps vs jumpbox vs private endpoints), add deny-by-default with explicit allow rules, and document segmentation expectations.","Differentiate egress rules per subnet (apps vs jumpbox vs private endpoints), add deny-by-default with explicit allow rules, and document segmentation expectations.","resiliency;P3-011"
+"P3-012: No NSG flow logs or Network Watcher","Task","4","4 - Low","New","Finding: P3-012: No NSG flow logs or Network Watcher
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: Diagnostic settings exist on the VNet only; no `flowLogs` resource or Network Watcher is provisioned. Network forensics depth gap; behavior unchanged regardless of topology.
+
+File: infra/modules/virtualNetwork.bicep:19
+
+```bicep
+// VNet diagnostic settings exist; no flowLogs resource provisioned.
+resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' existing = {
+ name: name
+}
+// (no Microsoft.Network/networkWatchers/flowLogs resource present)
+```
+
+Recommended Fix: Provision a Network Watcher and NSG flow logs to a Storage account in each region, enable Traffic Analytics if licensed, and document retention.","Provision a Network Watcher and NSG flow logs to a Storage account in each region, enable Traffic Analytics if licensed, and document retention.","resiliency;P3-012"
+"P3-013: `AZURE_TENANT_ID` and `TENANT_ID` duplicated","Task","4","4 - Low","New","Finding: P3-013: `AZURE_TENANT_ID` and `TENANT_ID` duplicated
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: Two `AppConfig` attributes (`AZURE_TENANT_ID` and `TENANT_ID`) resolve to the same `AZURE_TENANT_ID` env var, and `get_tenantid` exists only as dead code. Maintainability concern; behavior unchanged regardless of topology.
+
+File: src/backend/common/config/app_config.py:27
+
+```python
+class AppConfig:
+ def __init__(self):
+ # Azure authentication settings
+ self.AZURE_TENANT_ID = self._get_optional(""AZURE_TENANT_ID"")
+ self.AZURE_CLIENT_ID = self._get_optional(""AZURE_CLIENT_ID"")
+ # ... many lines later ...
+ self.TENANT_ID = self._get_optional(""AZURE_TENANT_ID"")
+ self.CLIENT_ID = self._get_optional(""AZURE_CLIENT_ID"")
+```
+
+Recommended Fix: Drop the duplicate `TENANT_ID` attribute, keep `AZURE_TENANT_ID` as canonical, remove or wire up `get_tenantid`, and add a lint check for unused config helpers.","Drop the duplicate `TENANT_ID` attribute, keep `AZURE_TENANT_ID` as canonical, remove or wire up `get_tenantid`, and add a lint check for unused config helpers.","resiliency;P3-013"
+"P3-014: Default `ENABLE_AUTH=false` and `MCP_ENABLE_AUTH=false`","Task","4","4 - Low","New","Finding: P3-014: Default `ENABLE_AUTH=false` and `MCP_ENABLE_AUTH=false`
+
+Priority: P3
+
+Resiliency Related: No
+
+Issue: IaC and shipped-config defaults disable auth on both the web app and the MCP server. Posture default; behavior unchanged regardless of topology, but a `{secondaryRegion}` cold DR deploy will inherit the insecure default unless operators override it.
+
+File: infra/main.bicep:1466
+
+```bicep
+{
+ name: 'ENABLE_AUTH'
+ value: 'false'
+}
+{
+ name: 'TENANT_ID'
+ value: tenant().tenantId
+}
+{
+ name: 'CLIENT_ID'
+ value: userAssignedIdentity!.outputs.clientId
+}
+```
+
+Recommended Fix: Default `ENABLE_AUTH=true` and `MCP_ENABLE_AUTH=true` in production parameter sets; update `.env.example` and `docker-compose.yml`; keep dev overrides explicit; add a parameter-file lint that asserts `ENABLE_AUTH=true` for prod profiles.","Default `ENABLE_AUTH=true` and `MCP_ENABLE_AUTH=true` in production parameter sets; update `.env.example` and `docker-compose.yml`; keep dev overrides explicit; add a parameter-file lint that asserts `ENABLE_AUTH=true` for prod profiles.","resiliency;P3-014"
