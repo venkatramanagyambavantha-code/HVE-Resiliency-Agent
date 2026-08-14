@@ -1,7 +1,7 @@
 ---
 description: Scaffold the split Prompt 7 Logging pipeline - validate Prompt 1a and 1b prerequisites, freeze eligible dependencies, emit the Prompt 7 skeleton and a frozen manifest sidecar
 agent: Task Researcher
-argument-hint: "[researchRoot=.copilot-tracking/research/]"
+argument-hint: "[researchRoot=...]"
 ---
 
 # HVE Resiliency Researcher 7 Logging - 0 - Scaffold
@@ -10,7 +10,7 @@ Use [Application Platform Context](../../instructions/hve-resiliency-platform-co
 
 ## Inputs
 
-* `${input:researchRoot:.copilot-tracking/research/}`: (Optional) Workspace-relative research root. Defaults to `.copilot-tracking/research/`. Must resolve to an existing directory inside the workspace.
+* `${input:researchRoot}`: (Optional) Workspace-relative research root. Defaults to the `researchRoot` recorded in the run context lock. Must resolve to an existing directory inside the workspace.
 
 ## Direct Invocation and Prerequisite
 
@@ -57,7 +57,7 @@ Emit the Prompt 7 skeleton artifact at `<researchRoot>/YYYY-MM-DD/<repo-name>-hv
 <!-- markdownlint-disable-file -->
 ---
 title: <repo-name> Production Logging and Silent-Outage Diagnostics (Researcher 7 Logging)
-description: Evidence-only inventory of current logging plus prioritized gaps and risks in production observability, evaluated between West US 2 and West US regional failover
+description: Evidence-only inventory of current logging plus prioritized gaps and risks in production observability, evaluated between {primaryRegion} and {secondaryRegion} regional failover
 ms.date: YYYY-MM-DD
 ms.topic: research
 source-prompt: hve-resiliency-researcher-7-logging
@@ -69,7 +69,7 @@ pipeline-stage: scaffold
 
 ## Scope and Assumptions
 
-- Scope: Production logging inventory and silent-outage diagnostic gaps for `<repo-name>`, for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between West US 2 and West US regional failover.
+- Scope: Production logging inventory and silent-outage diagnostic gaps for `<repo-name>`, for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between {primaryRegion} and {secondaryRegion} regional failover.
 - Eligible dependencies frozen by the scaffold manifest: see `<manifest-path>`.
 - Payment applicability frozen by the scaffold manifest.
 - Excluded per platform Service Exclusion Rule: every dependency classified in Prompt 1a Section 2 or 3 and Prompt 1b Section 2 or 3.

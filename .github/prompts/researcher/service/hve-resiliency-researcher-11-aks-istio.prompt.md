@@ -15,7 +15,7 @@ Global Load Balancer.
 
 ## Assessment Scope
 
-Assess only application code and configuration, not infrastructure, for regional failover between West US 2 and West US.
+Assess only application code and configuration, not infrastructure, for regional failover between {primaryRegion} and {secondaryRegion}.
 Evaluate these ten questions without adding assessment areas:
 
 * Are timeouts defined for all outbound calls?

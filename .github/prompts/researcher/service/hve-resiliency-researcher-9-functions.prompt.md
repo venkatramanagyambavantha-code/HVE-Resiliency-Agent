@@ -10,12 +10,12 @@ as supporting context. Apply every safety-critical control in this prompt direct
 whether that instructions file is auto-applied.
 
 Define the required regional-failover expectations for
-{customerName} Azure Functions in West US 2 and West US. Assess only Azure
+{customerName} Azure Functions in {primaryRegion} and {secondaryRegion}. Assess only Azure
 Functions behavior and requirements that directly affect regional failover.
 
 ## Functions Requirements
 
-* Deployment follows an active-active model across West US 2 and West US
+* Deployment follows an active-active model across {primaryRegion} and {secondaryRegion}
 * Both regions continuously serve production traffic
 * Each region can handle 100% of peak load during a regional outage
 * Azure Front Door provides global traffic management

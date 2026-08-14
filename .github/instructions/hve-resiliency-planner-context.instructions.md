@@ -234,7 +234,7 @@ When writing findings and recommendations, keep the following system topology in
 
 ## Output File Naming Rule
 
-All output files and reports must use the current repository name (or a user-supplied context variable) as the prefix, not a hardcoded value. For example, output to `.copilot-tracking/research/<repo-name>-planner-report.md`.
+All output files and reports must use the current repository name (or a user-supplied context variable) as the prefix, not a hardcoded value. For example, output to `<researchRoot>/<repo-name>-planner-report.md`.
 
 ## Context Management
 

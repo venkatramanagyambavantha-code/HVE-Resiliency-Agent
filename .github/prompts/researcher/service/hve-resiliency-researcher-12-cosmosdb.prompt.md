@@ -12,9 +12,9 @@ whether that instructions file is auto-applied.
 ## Inputs
 
 * `${input:prompt1aArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt 1a
-  Azure dependency inventory artifact under `.copilot-tracking/research/`.
+  Azure dependency inventory artifact under `<researchRoot>`.
 * `${input:prompt1bArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt 1b
-  external dependency inventory artifact under `.copilot-tracking/research/`.
+  external dependency inventory artifact under `<researchRoot>`.
 
 Use only these paths for prerequisite artifacts. Do not search, glob, select a recent file, or infer a
 prerequisite path.
@@ -27,9 +27,9 @@ repository evidence and report factual evidence gaps instead of assumptions.
 
 Assess only the current repository for these authoritative scenarios, one scenario per finding:
 
-* Full regional failover between West US 2 and West US
+* Full regional failover between {primaryRegion} and {secondaryRegion}
 
-Treat East US, active-active or multi-region writes, Last Write Wins, the RU model, Mongo API behavior,
+Treat any region name, multi-region writes, Last Write Wins, the RU model, Mongo API behavior,
 and no-data-loss expectations as claims to verify or as constraints or evidence gaps. Do not assume they
 describe the production architecture. Repository evidence cannot prove unavailable runtime replication,
 acknowledgement, conflict, recovery, or global load balancer behavior.
@@ -103,7 +103,7 @@ Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms 
 Validate both input artifacts before repository discovery:
 
 1. Normalize each path and require a regular workspace-relative file under
-   `.copilot-tracking/research/`, without traversal, absolute paths, links, or repository escape.
+   `<researchRoot>`, without traversal, absolute paths, links, or repository escape.
 2. Parse YAML frontmatter and require non-empty string fields `repository`, `assessmentId`, `revision`,
    `status`, `generatedAt`, and `promptId`. Require the current repository name, the exact current commit
    SHA, `status: Complete`, RFC 3339 UTC ending in `Z`, and the matching `promptId` value `1a` or `1b`.
@@ -210,7 +210,7 @@ manifest. Bundle all listed terms for that family into its single invocation, ca
 result set, and never repeat a family or use a result to begin broad rediscovery.
 
 1. Cosmos binding: `cosmos`, `mongodb`, `mongo`, `ru`, client construction, connection keys, and endpoints
-2. Region and endpoint selection: preferred regions, West US 2, West US, East US, hosts, URIs, DNS, and fallback selection
+2. Region and endpoint selection: preferred regions, {primaryRegion}, {secondaryRegion}, any other region name, hosts, URIs, DNS, and fallback selection
 3. Retry and throttling: retry, timeout, backoff, transient errors, 429, throttling, and exception handling
 4. Session behavior: session tokens, consistency, causal consistency, read concern, write concern, and read-your-writes
 5. Write safety and conflicts: idempotency, duplicate suppression, conflict resolution, Last Write Wins, versioning, and acknowledgements
@@ -281,7 +281,7 @@ Classify each rendered finding with exactly one evidence-supported priority:
 * P3: Non-blocking maintainability, readability, duplication, or consistency behavior
 
 The risk field must connect cited behavior to one named authoritative scenario and failure effect. Never
-derive priority from an unverified no-data-loss, active-active, East US, or Last Write Wins premise.
+derive priority from an unverified no-data-loss, multi-region-write, named-region, or Last Write Wins premise.
 
 Use the exact field-safe value `Unknown: evidence unavailable (<evidence-gap-id>)` only in the impact,
 existing-mitigation, or constraint prose field when that field cannot be supported from repository
@@ -313,7 +313,7 @@ or incomplete source or query family requires a `bounded-partial` status unless 
 ## Output and handoff
 
 Write one sanitized artifact to
-`.copilot-tracking/research/<repository-name>-hve-resiliency-researcher-12-cosmosdb-research-output.md`,
+`<researchRoot>/<repository-name>-hve-resiliency-researcher-12-cosmosdb-research-output.md`,
 where `<repository-name>` is the sanitized current repository root directory name. Include the single
 terminal status, checked manifest roots and exclusions, completed query and read coverage, evidence gaps,
 hard-cap usage, compact candidate disposition and assertion-mapping counts, and zero-finding statement

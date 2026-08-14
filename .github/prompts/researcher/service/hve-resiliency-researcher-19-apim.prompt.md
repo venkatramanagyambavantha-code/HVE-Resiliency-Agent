@@ -40,7 +40,7 @@ or broaden this assessment.
 Evaluate repository evidence against these existing assumptions without treating an
 assumption as evidence:
 
-* APIM is deployed as two independent instances, one in West US and one in West US 2.
+* APIM is deployed as two independent instances, one in {secondaryRegion} and one in {primaryRegion}.
 * A Global Load Balancer routes traffic regionally, and failover occurs at the
   application level rather than per service.
 * An application operating in one region does not depend on Azure services in the
@@ -50,7 +50,7 @@ assumption as evidence:
 
 ## Assessment Scope
 
-For each eligible APIM dependency, assess regional failover between West US 2 and West US. Evaluate exactly these existing
+For each eligible APIM dependency, assess regional failover between {primaryRegion} and {secondaryRegion}. Evaluate exactly these existing
 criteria:
 
 1. Alignment of Global Load Balancer and backend health probes.
@@ -63,7 +63,7 @@ criteria:
 7. Protection against data loss, duplicate charges, and prolonged downtime during
    regional failover.
 
-The preserved failure scenario is regional failover between West US 2 and West US. For one eligible APIM dependency, the seven
+The preserved failure scenario is regional failover between {primaryRegion} and {secondaryRegion}. For one eligible APIM dependency, the seven
 criteria across this scenario create seven scenario-specific
 dependency-criterion pairs. Evaluate every pair independently within the dependency's
 shared counters. Keep distinct evidenced failure modes in separate issue rows; never
@@ -236,7 +236,7 @@ blocking status applies:
 
 ## Output Format
 
-Write the authoritative research artifact to `.copilot-tracking/research/` with the
+Write the authoritative research artifact to `<researchRoot>` with the
 repository name as the filename prefix. Stamp the resolved deployment topology in the
 artifact's front matter as `topology: <active-active|active-standby>`, and state it with
 the resolved regions as an evaluation condition alongside the report-level status block.

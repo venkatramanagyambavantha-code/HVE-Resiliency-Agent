@@ -17,7 +17,7 @@ Assess only application code and configuration that produces to or consumes from
 Apply these controls directly:
 
 * Scope the repository to application behavior before, during, and after a managed Kafka cluster flip.
-* Evaluate both authoritative scenarios: zone failure within West US 2, and regional failover from West US 2 to West US.
+* Evaluate both authoritative scenarios: zone failure within {primaryRegion}, and regional failover from {primaryRegion} to {secondaryRegion}.
 * Treat independent regional clusters, an active cluster, a standby cluster, managed replication, mirror-topic state, offset synchronization, promotion, failover, and failback as user-confirmed scenario assumptions only. Never present them as repository facts.
 * Treat bootstrap selection as application behavior and platform failover orchestration as out of scope.
 * Use Apache Kafka client 3.8 or later as the application client threshold only when a prerequisite-confirmed Confluent product or feature supplies an authoritative citation for that claim.
@@ -60,10 +60,10 @@ root-directory basename. Derive `<YYYY-MM-DD>` as the current UTC assessment
 date. Read only these repository-prefixed prerequisites; match the `<repo-name>`
 segment case-insensitively per the normalization rules below:
 
-* `.copilot-tracking/research/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-1a-research.md`
-* `.copilot-tracking/research/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-1b-research.md`
-* `.copilot-tracking/research/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-12-cosmosdb-research.md`, when present
-* `.copilot-tracking/research/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-13-sql-research.md`, when present
+* `<researchRoot>/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-1a-research.md`
+* `<researchRoot>/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-1b-research.md`
+* `<researchRoot>/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-12-cosmosdb-research.md`, when present
+* `<researchRoot>/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-13-sql-research.md`, when present
 
 Each producer artifact must begin with YAML frontmatter, optionally preceded by a single `<!-- markdownlint-disable-file -->` HTML comment on the first line only. The frontmatter must contain at least these lowercase keys, each once, with scalar values; additional keys are allowed but ignored:
 
@@ -170,7 +170,7 @@ Use only the following concern IDs and meanings. Do not add, split, rename, or e
 16. `KAS-16`: Startup, dependency injection, singleton ownership, worker cancellation, graceful shutdown, readiness, restart loops, and permanently stopped clients
 17. `KAS-17`: Database writes, external API calls, Kafka transactions, outbox or inbox patterns, commit boundaries, poison messages, dead letters, and interrupted partial completion
 18. `KAS-18`: Failback and regional recovery, reconnection, replay, offset continuity, backlog processing, and restored steady state
-19. `KAS-19`: West US and West US 2 symmetry for bootstrap endpoints, topics, group IDs, retry policies, credentials, client versions, and observability
+19. `KAS-19`: {primaryRegion} and {secondaryRegion} symmetry for bootstrap endpoints, topics, group IDs, retry policies, credentials, client versions, and observability
 20. `KAS-20`: Database-to-Kafka pairing cross-check between the derived data write model and the declared active-standby deployment topology, including mismatch findings and write-model evidence gaps
 21. `KAS-21`: Alignment among GLB health, application readiness, Kafka connectivity, and downstream processing health
 
@@ -206,7 +206,7 @@ Never retain raw tool dumps, secret values, certificate bodies, private keys, or
 
 Assign candidates stable IDs `CAND-001` onward after sorting by concern ID, repository-relative path, first line, and normalized assertion text. Use the deduplication key `concern ID | scenario | failure mode | owning code path | observable effect`.
 
-Give every candidate exactly one terminal disposition: `finding`, `rejected false positive`, `rejected inference`, `duplicate of <candidate ID>`, or `unknown/evidence gap`. A duplicate may point only to an earlier candidate. Never merge materially distinct failure modes. Emit separate finding rows for the West US 2 zone-failure and West US 2-to-West US regional-failover scenarios when evidence supports both and their outcome, causal chain, priority, or constraints differ. Use one row marked `Both scenarios` in `Issue Description` only when all those semantics are identical.
+Give every candidate exactly one terminal disposition: `finding`, `rejected false positive`, `rejected inference`, `duplicate of <candidate ID>`, or `unknown/evidence gap`. A duplicate may point only to an earlier candidate. Never merge materially distinct failure modes. Emit separate finding rows for the {primaryRegion} zone-failure and {primaryRegion}-to-{secondaryRegion} regional-failover scenarios when evidence supports both and their outcome, causal chain, priority, or constraints differ. Use one row marked `Both scenarios` in `Issue Description` only when all those semantics are identical.
 
 Map every substantive assertion to a sanitized citation containing repository-relative path, exact line or line range, symbol or property, and a minimal excerpt. Validate that each cited line exists, the excerpt matches, the evidence state is eligible, and the citation supports the assertion rather than merely mentioning a keyword.
 
@@ -238,7 +238,7 @@ Artifact write or validation failure changes any otherwise completed status to `
 
 ## Canonical Output Artifact
 
-Write progressively to `.copilot-tracking/research/<repo-name>-hve-resiliency-researcher-16-kafka-active-standby-confluent-research.md`. Write to a temporary sibling file, validate it, then atomically replace the final artifact. On interruption, preserve the latest valid temporary artifact and report its path without presenting it as final.
+Write progressively to `<researchRoot>/<repo-name>-hve-resiliency-researcher-16-kafka-active-standby-confluent-research.md`. Write to a temporary sibling file, validate it, then atomically replace the final artifact. On interruption, preserve the latest valid temporary artifact and report its path without presenting it as final.
 
 Stamp the resolved deployment topology in the artifact front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation condition in `Scope And Terminal Status`. Stamp the resolved deployment topology only; never stamp a data write model in that field. Stamping is required and adds no section.
 
@@ -263,7 +263,7 @@ When status is `completed zero findings`, state that no validated findings were 
 
 Render every finding with these field names in this exact order and no additional fields:
 
-1. `Issue Description:` Include finding ID, concern ID, and `West US 2 zone failure`, `West US 2 to West US regional failover`, or `Both scenarios`.
+1. `Issue Description:` Include finding ID, concern ID, and `{primaryRegion} zone failure`, `{primaryRegion} to {secondaryRegion} regional failover`, or `Both scenarios`.
 2. `Risk Level (P0/P1/P2/P3):`
 3. `Code location (file + line number):`
 4. `Why this is a risk to app, zone or region failover:`

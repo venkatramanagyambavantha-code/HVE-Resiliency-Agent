@@ -1,6 +1,6 @@
 ---
 name: hve-resiliency-research
-description: Use for application resiliency research covering regional failover between West US 2 and West US with the task-researcher workflow, evidence-only outputs, and P0-P3 priority classification.
+description: Use for application resiliency research covering regional failover between {primaryRegion} and {secondaryRegion} with the task-researcher workflow, evidence-only outputs, and P0-P3 priority classification.
 ---
 
 # HVE Resiliency Research
@@ -32,7 +32,7 @@ The orchestrators dispatch each step below to a fresh subagent, so they parallel
 
 Deployment topology and regions are carried by the run context lock on disk, not by the conversation. Every prompt re-resolves them from that lock, so they survive `/clear`, a new chat, an agent switch, and parallel subagent dispatch. Never re-ask the user for topology or regions after Phase 0, and never re-derive them from repository contents.
 
-A context reset (`/clear` or a new chat) is a clarity and cost tool, not a correctness requirement: the run context lock plus durable artifacts in `.copilot-tracking/research/` carry context forward between prompts. In the manual workflow below, a reset before each prompt keeps the input scoped to the prior artifact plus the current prompt (the Mode A cost optimization); it is recommended for cost and optional for correctness. At minimum, reset at phase boundaries and when switching agents. When using the orchestrator agents, context is managed automatically and no manual reset is needed.
+A context reset (`/clear` or a new chat) is a clarity and cost tool, not a correctness requirement: the run context lock plus durable artifacts in `<researchRoot>` carry context forward between prompts. In the manual workflow below, a reset before each prompt keeps the input scoped to the prior artifact plus the current prompt (the Mode A cost optimization); it is recommended for cost and optional for correctness. At minimum, reset at phase boundaries and when switching agents. When using the orchestrator agents, context is managed automatically and no manual reset is needed.
 
 ## Required Workflow
 
@@ -51,7 +51,7 @@ Every prompt below resolves its topology and regions from that lock per the cont
 Phase 1 is mandatory and sequential. Always begin with Prompt 0, after Phase 0.
 
 2. Run `/hve-resiliency-researcher-0` first to establish the repository context frame.
-3. Review the resulting research artifact in `.copilot-tracking/research/`.
+3. Review the resulting research artifact in `<researchRoot>`.
 4. Run `/hve-resiliency-researcher-1a`, review its Section 1 Azure services, then run `/hve-resiliency-researcher-1b` and review its Section 1 external dependencies.
 5. Treat the combined Prompt 1a and Prompt 1b Section 1 entries as the evidence-confirmed dependency set. Exclude every dependency classified only in either artifact's Section 2 or Section 3 from subsequent prompts.
 6. Run `/hve-resiliency-researcher-2`.
@@ -107,7 +107,7 @@ Consolidation has been split into a bounded pipeline. Run these in order:
 26. Run `/hve-resiliency-consolidate-verify-1-4` to audit Sections 1-4 fragments against routed source artifacts (report-only).
 27. Run `/hve-resiliency-consolidate-verify-5-8` to audit Sections 5-8 fragments against routed source artifacts (report-only).
 28. Run `/hve-resiliency-consolidate-9-finalize` to assemble the fragments, run index-level dedup and section precedence, reconcile finding IDs into the authoritative `F-00X` scheme, and build the Section 9 index.
-29. Review the consolidated report at `.copilot-tracking/research/`.
+29. Review the consolidated report at `<researchRoot>`.
 
 ### Phase 4: Planning
 
@@ -144,7 +144,7 @@ Phase 6 verifies that every source citation, verbatim code block, and fix block 
 * Do not include code examples in research phases
 * Classify every finding using P0 / P1 / P2 / P3 priorities
 * Cite file and line-level evidence for every substantive claim
-* Write each research output to `.copilot-tracking/research/` and use the repository name as the prefix for all output files (e.g., `<repo-name>-research-output.md`).
+* Write each research output to `<researchRoot>` and use the repository name as the prefix for all output files (e.g., `<repo-name>-research-output.md`).
 * Planning outputs (Phase 4) may include remediation and code examples
 
 ## Priority Definitions
@@ -261,7 +261,7 @@ status: current
 ## Region Assumptions
 - Assumption:
 - Priority: P0 / P1 / P2 / P3
-- Failover relevance (West US 2 to West US):
+- Failover relevance ({primaryRegion} to {secondaryRegion}):
 - Evidence: <file path>:<line>
 - Existing mitigations present (if any): with evidence
 - Constraints/limitations (if any): with evidence
@@ -330,7 +330,7 @@ Row shape (each row is emitted with an outcome-scoped ID such as `F-5-startup-00
 - Failure mode:
 - Priority: P0 / P1 / P2 / P3
 - Triggering dependency + failure type (timeout / DNS failure / authentication failure / partial outage):
-- Scenario: Between West US 2 and West US regional failover
+- Scenario: Between {primaryRegion} and {secondaryRegion} regional failover
 - Code path / entrypoint:
 - Observed behavior (startup failure / silent degradation / data loss or partial processing / blocking transactions):
 - User or customer-visible impact:
@@ -401,8 +401,8 @@ The consolidated report is produced by the split consolidation pipeline (scaffol
 Assessment Scope:
 
 * Repository: <repo-name>
-* Focus: Between West US 2 and West US regional failover
-* Regions Evaluated: West US 2 to West US
+* Focus: Between {primaryRegion} and {secondaryRegion} regional failover
+* Regions Evaluated: {primaryRegion} to {secondaryRegion}
 * Assessment Date: YYYY-MM-DD
 * Generated By: HVE Task Researcher
 * Schema Version: hve-resiliency-consolidation/v1
@@ -437,7 +437,7 @@ Each rendered finding under Sections 2.1 and 3-8 uses the Required Finding Schem
 * Dependency or Category:
 * Priority: P0 | P1 | P2 | P3
 * Ownership:
-- Scenario: Between West US 2 and West US regional failover
+- Scenario: Between {primaryRegion} and {secondaryRegion} regional failover
 * Description:
 * Failure Mode and Scenario-Specific Risk:
 * Impacts:

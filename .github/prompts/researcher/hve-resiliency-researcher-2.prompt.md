@@ -28,7 +28,7 @@ create inherited primary or subagent artifacts.
 
 Identify all evidence-confirmed regional failoverassumptions in the
 current repository. Evaluate each assumption for regional failover between 
-West US and West US 2 as part of the target deployment.
+{primaryRegion} and {secondaryRegion} as part of the target deployment.
 
 Cover production application code, configuration, infrastructure as code,
 deployment manifests, pipelines, scripts, and operational runbooks. Evaluate
@@ -187,7 +187,7 @@ Resolve prerequisites in this order and prefer proceeding over blocking.
 ## Output Contract
 
 Write the result to
-`.copilot-tracking/research/<repo-name>-researcher-2-region-zone-assumptions.md`.
+`<researchRoot>/<repo-name>-researcher-2-region-zone-assumptions.md`.
 Keep it evidence-only. Do not include remediation, advice, or code examples.
 
 Stamp the resolved deployment topology in the artifact's front matter as

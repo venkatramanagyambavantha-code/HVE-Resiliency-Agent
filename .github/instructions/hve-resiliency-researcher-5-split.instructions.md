@@ -49,7 +49,7 @@ These are research stages: an input artifact whose stamp differs from the manife
 
 ## Manifest Auto-Location
 
-When a prompt's `manifestPath` input is omitted, auto-locate the frozen Prompt 5 manifest sidecar instead of asking the user. Enumerate files whose name ends with `-hve-resiliency-researcher-5-research.manifest.md` under the research root (`.copilot-tracking/research/` and its `YYYY-MM-DD/` dated subdirectories). Select the candidate under the lexicographically largest dated segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one resolves, use it. If none resolve, stop `Blocked` with `Prompt 5 manifest not found; run hve-resiliency-researcher-5-0-scaffold first`. An explicitly supplied path always overrides auto-location.
+When a prompt's `manifestPath` input is omitted, auto-locate the frozen Prompt 5 manifest sidecar instead of asking the user. Enumerate files whose name ends with `-hve-resiliency-researcher-5-research.manifest.md` under the research root (`<researchRoot>` and its `YYYY-MM-DD/` dated subdirectories). Select the candidate under the lexicographically largest dated segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one resolves, use it. If none resolve, stop `Blocked` with `Prompt 5 manifest not found; run hve-resiliency-researcher-5-0-scaffold first`. An explicitly supplied path always overrides auto-location.
 * `outcomeRouting`: the four fixed routing keys `startup-failure`, `silent-degradation`, `data-loss-partial-processing`, and `blocking-transactions`, each mapped to its fill prompt ID and its fragment file name.
 
 Downstream stages never read Prompt 1a or Prompt 1b directly. They read the manifest and use the frozen `eligibleDependencies` list.
@@ -63,7 +63,7 @@ Identify repository code paths where dependency timeouts, DNS failures, authenti
 * `data-loss-partial-processing`: a message, record, or write may be lost, partially processed, duplicated in a way that violates business intent, or left in an inconsistent state.
 * `blocking-transactions`: a request path, consumer, producer, or scheduled job blocks, deadlocks, exhausts a resource, or holds a transaction open beyond its bounded time.
 
-Both platform scenarios apply: West US 2 zone failure and West US 2 to West US regional failover. Never combine zone and regional evidence in one row.
+Both platform scenarios apply: {primaryRegion} zone failure and {primaryRegion} to {secondaryRegion} regional failover. Never combine zone and regional evidence in one row.
 
 ## Bounded Discovery (inherited by every fill prompt)
 
@@ -82,7 +82,7 @@ Treat every reached numeric limit as source exhaustion. Do not broaden, reword, 
 
 ## Row Identity and Deduplication
 
-Within one outcome fragment, a row key is: confirmed dependency + failure type (timeout / DNS failure / authentication failure / partial outage) + production entrypoint + scenario (West US 2 zone failure or West US 2 to West US regional failover). Separate distinct outcomes, distinct priorities, or distinct scenarios into distinct rows. Retain every causal citation on the row it belongs to.
+Within one outcome fragment, a row key is: confirmed dependency + failure type (timeout / DNS failure / authentication failure / partial outage) + production entrypoint + scenario ({primaryRegion} zone failure or {primaryRegion} to {secondaryRegion} regional failover). Separate distinct outcomes, distinct priorities, or distinct scenarios into distinct rows. Retain every causal citation on the row it belongs to.
 
 Emit a row only when positive repository evidence establishes its dependency and production owner, entrypoint, or path.
 
@@ -96,7 +96,7 @@ Every rendered row uses these fields exactly, in this order, with a single row-s
 * Failure mode
 * Priority: P0 | P1 | P2 | P3
 * Triggering dependency + failure type (timeout / DNS failure / authentication failure / partial outage)
-* Scenario: West US 2 zone failure | West US 2 to West US regional failover
+* Scenario: {primaryRegion} zone failure | {primaryRegion} to {secondaryRegion} regional failover
 * Code path / entrypoint
 * Observed behavior (startup failure / silent degradation / data loss or partial processing / blocking transactions)
 * User or customer-visible impact

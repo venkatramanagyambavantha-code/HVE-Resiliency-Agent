@@ -1,7 +1,7 @@
 ---
 description: Scaffold the split Prompt 5 pipeline - validate Prompt 1a and 1b prerequisites, freeze eligible dependencies, emit the Prompt 5 skeleton and a frozen manifest sidecar
 agent: Task Researcher
-argument-hint: "[researchRoot=.copilot-tracking/research/]"
+argument-hint: "[researchRoot=...]"
 ---
 
 # HVE Resiliency Researcher 5 - 0 - Scaffold
@@ -10,7 +10,7 @@ Use [Application Platform Context](../../instructions/hve-resiliency-platform-co
 
 ## Inputs
 
-* `${input:researchRoot:.copilot-tracking/research/}`: (Optional) Workspace-relative research root. Defaults to `.copilot-tracking/research/`. Must resolve to an existing directory inside the workspace.
+* `${input:researchRoot}`: (Optional) Workspace-relative research root. Defaults to the `researchRoot` recorded in the run context lock. Must resolve to an existing directory inside the workspace.
 
 ## Direct Invocation and Prerequisite
 
@@ -81,7 +81,7 @@ topology: <active-active|active-standby>
 
 ## Scope and Assumptions
 
-- Scope: Failure and degraded mode behavior of `<repo-name>` for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between West US 2 and West US regional failover.
+- Scope: Failure and degraded mode behavior of `<repo-name>` for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between {primaryRegion} and {secondaryRegion} regional failover.
 - Deployment topology evaluated: `<active-active|active-standby>`, with `<primaryRegion>` as the primary region and `<secondaryRegion>` as the secondary region, resolved from the run context lock and frozen by the scaffold manifest.
 - Eligible dependencies frozen by the scaffold manifest: see `<manifest-path>`.
 - Excluded per platform Service Exclusion Rule: every dependency classified in Prompt 1a Section 2 or 3 and Prompt 1b Section 2 or 3.

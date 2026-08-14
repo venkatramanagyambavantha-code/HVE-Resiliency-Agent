@@ -21,7 +21,7 @@ Research only the existing Entra ID assessment surfaces:
 
 Assess each applicable surface independently for:
 
-* Full regional failover between West US 2 and West US
+* Full regional failover between {primaryRegion} and {secondaryRegion}
 
 Use repository evidence only. Do not provide remediation, recommendations, tuning,
 implementation guidance, or code examples. Do not infer Entra service topology,
@@ -146,7 +146,7 @@ Use one terminal status:
 
 ## Research Artifact
 
-Create `.copilot-tracking/research/<repo-name>-hve-resiliency-researcher-18-entraid.md`,
+Create `<researchRoot>/<repo-name>-hve-resiliency-researcher-18-entraid.md`,
 where `<repo-name>` is the current repository name. Create the artifact after the
 prerequisite gate and update it progressively after gate disposition, production
 discovery, candidate disposition, finding creation, and validation.

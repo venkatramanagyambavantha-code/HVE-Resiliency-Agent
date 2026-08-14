@@ -57,7 +57,7 @@ If the sub-manifest's `topology` differs from the outer manifest's at any stage,
 
 ## Sub-Manifest Auto-Location
 
-When a prompt's `subManifestPath` input is omitted, auto-locate the frozen Section 8 sub-manifest sidecar instead of asking the user. Enumerate files named `section-8.manifest.md` under `.copilot-tracking/research/` within any `sections/section-8-fragments/` directory. Select the candidate under the lexicographically largest `YYYY-MM-DD` dated ancestor segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one resolves, use it. If none resolve, stop `Blocked` with `Section 8 sub-manifest not found; run hve-resiliency-consolidate-8-0-scaffold first`. An explicitly supplied path always overrides auto-location. When `-8-0-scaffold` runs with `outerManifestPath` omitted, resolve it through the outer Manifest Auto-Location rule in the Consolidation Shared Contract.
+When a prompt's `subManifestPath` input is omitted, auto-locate the frozen Section 8 sub-manifest sidecar instead of asking the user. Enumerate files named `section-8.manifest.md` under `<researchRoot>` within any `sections/section-8-fragments/` directory. Select the candidate under the lexicographically largest `YYYY-MM-DD` dated ancestor segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one resolves, use it. If none resolve, stop `Blocked` with `Section 8 sub-manifest not found; run hve-resiliency-consolidate-8-0-scaffold first`. An explicitly supplied path always overrides auto-location. When `-8-0-scaffold` runs with `outerManifestPath` omitted, resolve it through the outer Manifest Auto-Location rule in the Consolidation Shared Contract.
 
 Downstream stages read the outer manifest through this sub-manifest's `outerManifestPath`; they never re-run outer discovery. If the outer manifest's SHA-256 drifts between stages, the affected stage stops `Blocked` with `outer manifest drift`.
 
@@ -71,7 +71,7 @@ The five artifact groups are the only routing axes for this pipeline. Each group
 * `secrets-adjacent`: Prompt `7`. Residuals sanitized by the Prompt 7 secret sweep that are not hard-coded secret or value findings and that map to no other section.
 * `services`: applicable optional Prompt IDs `8` through `19`. Membership is exactly the accepted service artifact records recorded in the sub-manifest's `groupRouting.services` entry. When `servicesApplicability` is `not-applicable`, the services group emits zero provisional findings and its sub-fragment records the negative-check scope.
 
-Both platform scenarios apply: West US 2 zone failure and West US 2 to West US regional failover. Never combine zone and regional evidence in one provisional finding.
+Both platform scenarios apply: {primaryRegion} zone failure and {primaryRegion} to {secondaryRegion} regional failover. Never combine zone and regional evidence in one provisional finding.
 
 ## Residual Discipline
 
@@ -124,7 +124,7 @@ Every provisional finding uses the outer Consolidation Shared Contract's Require
 * Dependency or Category: <canonical dependency or category>
 * Priority: P0 | P1 | P2 | P3
 * Ownership: <evidence-backed owner or schema-safe value>
-* Scenario: West US 2 zone failure | West US 2 to West US regional failover
+* Scenario: {primaryRegion} zone failure | {primaryRegion} to {secondaryRegion} regional failover
 * Description: <evidence-based current behavior>
 * Failure Mode and Scenario-Specific Risk: <evidence-based risk>
 * Impacts: <operational, data, financial, and customer impacts supported by evidence>

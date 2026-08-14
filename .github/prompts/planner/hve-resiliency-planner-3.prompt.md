@@ -23,12 +23,12 @@ Never default the topology, never infer it from the Master Report, the Developer
 
 ## Source Artifacts
 
-Locate and read all of the following in full before generating the report. All files live under `.copilot-tracking/research/` (search recursively).
+Locate and read all of the following in full before generating the report. All files live under `<researchRoot>` (search recursively).
 
 * `{serviceName}-Master.md` — priorities, remediation, owners, open questions.
 * `{serviceName}-Developer-Guide.md` — code examples per finding (primary source for all code blocks).
 * `*-{serviceName}-research.md` — evidence-only consolidated research.
-* `subagents/` — all `prompt-N-topic.md` files under `.copilot-tracking/research/subagents/`.
+* `subagents/` — all `prompt-N-topic.md` files under `<researchRoot>/subagents/`.
 
 Use the Developer Guide for code samples, Master Report for priorities and remediation, Consolidated Research for evidence citations.
 

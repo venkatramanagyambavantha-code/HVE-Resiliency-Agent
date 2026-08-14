@@ -29,7 +29,7 @@ skill behavior.
 
 For every eligible networking dependency, assess readiness for both failure scenarios:
 
-* Regional failover from West US 2 to West US
+* Regional failover from {primaryRegion} to {secondaryRegion}
 
 ## Task Researcher Boundary
 
@@ -214,7 +214,7 @@ required exact text.
 
 ## Authoritative Artifact
 
-Write the research artifact to `.copilot-tracking/research/` using the repository name
+Write the research artifact to `<researchRoot>` using the repository name
 as the output filename prefix. Stamp the resolved deployment topology in the artifact's
 front matter as `topology: <active-active|active-standby>`, and state it with the
 resolved regions as an evaluation condition in the concise scope summary. Stamping is

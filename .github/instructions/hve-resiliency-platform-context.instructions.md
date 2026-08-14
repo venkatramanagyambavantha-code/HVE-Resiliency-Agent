@@ -14,7 +14,7 @@ Apply this context to all Application Platform resiliency research prompts.
 * All findings must cite file and line-level evidence
 * Never paraphrase referenced code. If a finding quotes or describes code, copy it verbatim from the source file and confirm the cited path and line numbers match that file exactly
 * Classify every finding using the priority framework: P0 (Blocking/Critical), P1 (High Priority), P2 (Improvement/Best Practice), P3 (Non-Blocking Code Consistency)
-* Output research artifacts to `.copilot-tracking/research/` and use the repository name as the prefix for all output files (e.g., `<repo-name>-research-output.md`).
+* Output research artifacts to `<researchRoot>` and use the repository name as the prefix for all output files (e.g., `<repo-name>-research-output.md`).
 
 ## Deployment Topology
 

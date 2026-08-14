@@ -19,7 +19,7 @@ infer eligibility, search for replacement eligibility evidence, or fall back to 
 0, another prompt, or conditional skill behavior.
 
 Review each confirmed dependency as Azure Managed Redis Enterprise in an active-active,
-multi-region configuration with eventual consistency. Assess readiness for regional failover between West US 2 and West US.
+multi-region configuration with eventual consistency. Assess readiness for regional failover between {primaryRegion} and {secondaryRegion}.
 
 ## Task Researcher Boundary
 
@@ -173,7 +173,7 @@ outcome.
 
 ## Authoritative Artifact
 
-Write the research artifact to `.copilot-tracking/research/` using the repository name
+Write the research artifact to `<researchRoot>` using the repository name
 as the output filename prefix. The artifact contains exactly these section classes:
 
 1. A concise scope summary

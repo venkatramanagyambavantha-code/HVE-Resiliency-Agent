@@ -47,7 +47,7 @@ Re-verify a carried-forward citation only when it is internally contradictory, c
 
 Analyze each eligible Azure and non-Azure dependency used by this repository for survivability during both scenarios:
 
-* Full regional failover between West US 2 and West US
+* Full regional failover between {primaryRegion} and {secondaryRegion}
 
 Determine from code or configuration whether endpoints, credentials, or identities assume a single region and whether fallback or multi-region logic exists. For each Azure dependency, verify whether the application implements a dependency health check and reflects that health state in readiness or health endpoints that drive GLB routing decisions.
 

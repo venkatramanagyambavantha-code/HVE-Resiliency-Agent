@@ -78,7 +78,7 @@ This is the sole `Blocked` condition added to Status and Failure Semantics. It i
 
 ## Manifest Auto-Location
 
-When a prompt's manifest path input is omitted, auto-locate the frozen outer consolidation manifest sidecar instead of asking the user. Enumerate `.md` files whose name ends with `-research.manifest.md` directly under `.copilot-tracking/research/` and under any `.copilot-tracking/research/YYYY-MM-DD/` dated subdirectory, excluding anything under `sections/`, `subagents/`, `validator/`, or `sandbox/`. Prefer a candidate whose body declares schema version `hve-resiliency-consolidation/v1`. Select the candidate under the lexicographically largest `YYYY-MM-DD` dated segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one manifest resolves, use it. If none resolve, stop `Blocked` with `outer manifest not found; run hve-resiliency-consolidate-0-scaffold first`. An explicitly supplied path always overrides auto-location.
+When a prompt's manifest path input is omitted, auto-locate the frozen outer consolidation manifest sidecar instead of asking the user. Enumerate `.md` files whose name ends with `-research.manifest.md` directly under `<researchRoot>` and under any `<researchRoot>/YYYY-MM-DD/` dated subdirectory, excluding anything under `sections/`, `subagents/`, `validator/`, or `sandbox/`. Prefer a candidate whose body declares schema version `hve-resiliency-consolidation/v1`. Select the candidate under the lexicographically largest `YYYY-MM-DD` dated segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one manifest resolves, use it. If none resolve, stop `Blocked` with `outer manifest not found; run hve-resiliency-consolidate-0-scaffold first`. An explicitly supplied path always overrides auto-location.
 
 ## Section-to-Source Mapping
 
@@ -151,7 +151,7 @@ Use this schema exactly once for every finding rendered into Sections 2.1 and 3-
 * Dependency or Category: <canonical dependency or category>
 * Priority: P0 | P1 | P2 | P3
 * Ownership: <evidence-backed owner or schema-safe value>
-* Scenario: West US 2 zone failure | West US 2 to West US regional failover
+* Scenario: {primaryRegion} zone failure | {primaryRegion} to {secondaryRegion} regional failover
 * Description: <evidence-based current behavior>
 * Failure Mode and Scenario-Specific Risk: <evidence-based risk>
 * Impacts: <operational, data, financial, and customer impacts supported by evidence>

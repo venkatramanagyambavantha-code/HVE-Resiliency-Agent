@@ -13,9 +13,9 @@ whether that instructions file is auto-applied.
 ## Inputs
 
 * `${input:prompt1aArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt
-  1a dependency inventory artifact under `.copilot-tracking/research/`.
+  1a dependency inventory artifact under `<researchRoot>`.
 * `${input:prompt1bArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt
-  1b dependency validation artifact under `.copilot-tracking/research/`.
+  1b dependency validation artifact under `<researchRoot>`.
 
 Use only these exact paths for prerequisite artifacts. Never search, glob, select the latest file, or
 infer a prerequisite path.
@@ -30,7 +30,7 @@ render, and verification bounds in this prompt.
 
 Assess only the current repository for these scenarios:
 
-* Full regional failover between West US 2 and West US
+* Full regional failover between {primaryRegion} and {secondaryRegion}
 
 Assess only these seven Key Vault areas:
 
@@ -107,7 +107,7 @@ Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms 
 Validate both input paths before repository research:
 
 1. Normalize each path and confirm it is a workspace-relative file beneath
-   `.copilot-tracking/research/`, with no traversal, absolute-path, link, or cross-repository escape.
+   `<researchRoot>`, with no traversal, absolute-path, link, or cross-repository escape.
 2. Parse YAML frontmatter from both artifacts. Require `repository`, `assessmentId`, `revision`, `status`,
    `generatedAt`, and `promptId` as non-empty strings. Require `status: Complete`; `promptId: 1a` for the
    supplied Prompt 1a artifact and `promptId: 1b` for the supplied Prompt 1b artifact; `generatedAt` as
@@ -265,7 +265,7 @@ correction occurs, run one post-correction verification. Do not exceed two full 
 ## Output
 
 Write one sanitized research artifact to
-`.copilot-tracking/research/<repository-name>-hve-resiliency-researcher-10-keyvault-research-output.md`,
+`<researchRoot>/<repository-name>-hve-resiliency-researcher-10-keyvault-research-output.md`,
 where `<repository-name>` is the sanitized current repository root directory name. Include the terminal
 status, metrics, candidate disposition ledger and mappings, then render each valid finding exactly once
 with this centralized service schema.

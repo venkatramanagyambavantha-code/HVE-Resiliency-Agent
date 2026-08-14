@@ -38,7 +38,7 @@ Apply the inherited service exclusion rule. Analyze only Kafka dependencies conf
 as used in Prompt 1 Section 1. Treat dependencies classified as Checked But Not Present
 or Not Applicable as excluded.
 
-For every eligible Kafka dependency, assess readiness for regional failover between West US 2 and West US.
+For every eligible Kafka dependency, assess readiness for regional failover between {primaryRegion} and {secondaryRegion}.
 
 ## Topology Deltas
 
@@ -253,7 +253,7 @@ terminal outcome and every unresolved round-limit value uses the exact required 
 
 ## Authoritative Artifact
 
-Write the research artifact to `.copilot-tracking/research/` using the repository name
+Write the research artifact to `<researchRoot>` using the repository name
 as the output filename prefix. The artifact contains exactly these three section
 classes:
 

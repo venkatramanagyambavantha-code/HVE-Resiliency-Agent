@@ -15,7 +15,7 @@ Use [Application Platform Context](../../instructions/hve-resiliency-platform-co
 
 ## Scope
 
-Assess only shared libraries, platform utilities, and centrally managed configuration used by this repository that affect a regional failover between West US 2 and West US. Dependency categories include shared libraries such as internal packages and shared build parents or plugins, platform utilities such as clients and runtime integrations, and centrally managed configuration such as shared configuration stores, templates, and pipelines.
+Assess only shared libraries, platform utilities, and centrally managed configuration used by this repository that affect a regional failover between {primaryRegion} and {secondaryRegion}. Dependency categories include shared libraries such as internal packages and shared build parents or plugins, platform utilities such as clients and runtime integrations, and centrally managed configuration such as shared configuration stores, templates, and pipelines.
 
 Use evidence only. Preserve file-and-line citations, ownership boundaries, existing mitigations, constraints, and P0-P3 classification from the platform context. Do not introduce another assessment area.
 
@@ -67,7 +67,7 @@ Consume only the literal `prompt1aArtifact` and `prompt1bArtifact` paths supplie
 
 Before reading production sources, verify each supplied file:
 
-* Exists at the exact supplied path inside `.copilot-tracking/research/`, with no path traversal or symbolic resolution outside that directory.
+* Exists at the exact supplied path inside `<researchRoot>`, with no path traversal or symbolic resolution outside that directory.
 * Uses the current repository name as its filename prefix and has evidence paths that resolve within the current repository.
 * Has the expected producer shape and all required fields. Prompt 1a must contain `Section 1 - Used Azure Services (Evidence Confirmed)`, `Section 2 - Checked but Not Present`, and `Section 3 - Not Applicable`. Its Section 1 is the evidence-confirmed Azure dependency set and each entry must include service name, Azure service category, evidence class, file-line evidence, factual use, and region or failover sensitivity. Prompt 1b must contain `Section 1 — Used External Dependencies (Evidence Confirmed)`, `Section 2 — Checked but Not Present`, and `Section 3 — Not Applicable`; each Section 1 entry must include service or dependency name, file-line evidence, factual use, failover impact, mitigations, health-check and GLB-signaling details, and constraints or limitations.
 * Is structurally usable: all producer-required sections are present and required entries are well-formed, with no blocked, failed, unresolved, clipping, or read-error state remaining. A `status: incomplete` artifact is still usable when its committed Section 1 entries are well-formed; consume those entries and record the incompleteness as a coverage gap. Do not require a producer metadata field that Prompt 1a or Prompt 1b does not emit.
@@ -130,7 +130,7 @@ Sanitize evidence before retaining it in any record, log, hash input, subagent a
 
 ## Output Contract
 
-Write the repository-prefixed artifact to `.copilot-tracking/research/<repository-name>-hve-resiliency-researcher-6-research-output.md`.
+Write the repository-prefixed artifact to `<researchRoot>/<repository-name>-hve-resiliency-researcher-6-research-output.md`.
 
 YAML frontmatter must be the first content. Set its `title` value to exactly one allowed terminal status:
 

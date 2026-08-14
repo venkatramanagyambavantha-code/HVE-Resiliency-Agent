@@ -12,7 +12,7 @@ Run Prompt 8 only. Do not invoke earlier workflow prompts or another agent.
 
 ## Scope
 
-Assess Application Gateway for regional loss of West US 2 or West US;
+Assess Application Gateway for regional loss of {primaryRegion} or {secondaryRegion};
 regional/global routing; scaling, capacity, probes, backend
 health, WAF, policy, DNS, configuration, endpoints, direct DNS/IP dependencies,
 retries/timeouts/exponential backoff, application state, backend failover scaling, cold starts,
@@ -25,7 +25,7 @@ recommendations, alternatives, or code examples.
 
 ### Step 1: Validate Prerequisites
 
-1. In inherited `.copilot-tracking/research/`, require one Prompt 1a and 1b.
+1. In inherited `<researchRoot>`, require one Prompt 1a and 1b.
 1. Qualify only frontmatter with exact `source-prompt`
    `hve-resiliency-researcher-1a` or `hve-resiliency-researcher-1b`, plus
    `schema-version: 1`, `status: current`, and the matching body heading:
@@ -65,7 +65,7 @@ behavior, priority, or evidence.
 Stop when fields exist or no row qualifies, optional fields are evidenced/bounded
 Unknown, branches resolve, and ledger query is used/waived. After one tool-free
 empty ledger review, write inherited
-`.copilot-tracking/research/<repo-name>-prompt-8-appgw-research-output.md`; a
+`<researchRoot>/<repo-name>-prompt-8-appgw-research-output.md`; a
 supplied sandbox-local path overrides it.
 
 ## Output Schemas

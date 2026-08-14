@@ -14,7 +14,7 @@ whether that instructions file is auto-applied.
 Assess only evidence-confirmed Azure Storage dependencies in the current
 repository. Evaluate these two scenarios independently:
 
-1. Full regional failover between West US 2 and West US
+1. Full regional failover between {primaryRegion} and {secondaryRegion}
 
 This invocation executes only Prompt 15. Keep all repository interaction
 read-only except for the Prompt 15 research artifact. Do not perform another
@@ -123,8 +123,8 @@ Derive `<YYYY-MM-DD>` once as the current UTC assessment date. Read exactly thes
 prerequisite artifacts and no substitutes; match the `<repository-name>` segment
 case-insensitively per the normalization rules below:
 
-* `.copilot-tracking/research/<YYYY-MM-DD>/<repository-name>-hve-resiliency-researcher-1a-research.md`
-* `.copilot-tracking/research/<YYYY-MM-DD>/<repository-name>-hve-resiliency-researcher-1b-research.md`
+* `<researchRoot>/<YYYY-MM-DD>/<repository-name>-hve-resiliency-researcher-1a-research.md`
+* `<researchRoot>/<YYYY-MM-DD>/<repository-name>-hve-resiliency-researcher-1b-research.md`
 
 Each artifact must use this producer grammar. Frontmatter starts with a `---`
 fence, optionally preceded by a single `<!-- markdownlint-disable-file -->`
@@ -257,7 +257,7 @@ because results were sparse.
 1. Service identity and binding: Blob, Files, Queue, Table, SDK/client/API, Azure resource type or ID, endpoint, connection binding, deployment resource
 2. Writes and consistency: write/create/update/upload, concurrent or single writer, retry, idempotency, ETag, metadata, version, conflict
 3. Failure behavior: timeout, exception, fallback, alternate endpoint, endpoint selection, failover, failback, degraded read or write
-4. Replication and topology: region, West US 2, West US, primary, secondary, redundancy, LRS, ZRS, GRS, GZRS, RA-GRS, RA-GZRS, synchronous, asynchronous
+4. Replication and topology: region, {primaryRegion}, {secondaryRegion}, primary, secondary, redundancy, LRS, ZRS, GRS, GZRS, RA-GRS, RA-GZRS, synchronous, asynchronous
 5. Operations: runbook, manual step, account failover, DNS, routing, recovery, rollback, data-loss statement
 6. Health signaling: health, ready, live, probe, GLB, upstream routing, dependency readiness
 
@@ -405,7 +405,7 @@ all statuses.
 ## Research Artifact
 
 Write progressively to exactly
-`.copilot-tracking/research/<repository-name>-hve-resiliency-researcher-15-storage-research-output.md`.
+`<researchRoot>/<repository-name>-hve-resiliency-researcher-15-storage-research-output.md`.
 Before any prerequisite read, atomically create or replace this artifact with
 the assessment contract, `Run State: In progress`, and no terminal status. Do
 not start prerequisite or production work unless that write succeeds. Each

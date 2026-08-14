@@ -1,7 +1,7 @@
 ---
 description: Validate researcher artifacts against workspace source and correct unambiguous citation and code-fragment drift before consolidation
 agent: "Task Researcher"
-argument-hint: "researchRoot=.copilot-tracking/research/ [assessmentManifestPath=...] [mode={audit|autofix}]"
+argument-hint: "[researchRoot=...] [assessmentManifestPath=...] [mode={audit|autofix}]"
 ---
 
 # Application HVE Researcher Validator
@@ -10,7 +10,7 @@ Use [Application Platform Context](../../instructions/hve-resiliency-platform-co
 
 ## Inputs
 
-* `${input:researchRoot:.copilot-tracking/research/}`: (Optional) Workspace-relative root directory containing researcher artifacts to validate. Defaults to `.copilot-tracking/research/`.
+* `${input:researchRoot}`: (Optional) Workspace-relative root directory containing researcher artifacts to validate. Defaults to the `researchRoot` recorded in the run context lock.
 * `${input:assessmentManifestPath}`: (Optional) Workspace-relative path to an assessment sidecar manifest. When supplied, restrict validation to artifacts named in the sidecar and reject artifacts outside it. When omitted, validate every non-subagent `.md` file directly under `researchRoot` and every `.md` under `researchRoot/YYYY-MM-DD/`. Do not descend into `subagents/` unless the sidecar names an artifact there.
 * `${input:mode:audit}`: (Optional) One of `audit` or `autofix`. `audit` reports findings only. `autofix` applies the strict correction rules in the Auto-Correction Protocol section and reports what changed. Default is `audit`.
 
@@ -119,7 +119,7 @@ Total corrective actions per run are capped at 400. Total corrective rereads of 
 
 ## Audit Report
 
-Write exactly one audit report per run at `.copilot-tracking/research/validator/YYYY-MM-DD-validator-audit.md`, where `YYYY-MM-DD` is the current UTC date. Create the `validator/` directory if it does not exist. Overwrite an existing report with the same path only when the run completes without `Blocked`; otherwise write to `-partial.md` sibling.
+Write exactly one audit report per run at `<researchRoot>/validator/YYYY-MM-DD-validator-audit.md`, where `YYYY-MM-DD` is the current UTC date. Create the `validator/` directory if it does not exist. Overwrite an existing report with the same path only when the run completes without `Blocked`; otherwise write to `-partial.md` sibling.
 
 The audit report contains exactly these sections in this order:
 
