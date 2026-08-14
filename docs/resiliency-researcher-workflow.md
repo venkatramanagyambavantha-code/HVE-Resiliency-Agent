@@ -8,7 +8,7 @@ keywords:
   - resiliency
   - workflow
   - hve
-estimated_reading_time: 3
+estimated_reading_time: 5
 ---
 
 ## Before HVE — Ad-hoc Copy/Paste
@@ -46,21 +46,32 @@ flowchart LR
 
 ## Optimization — HVE Skill-Driven Workflow
 
-The current state packages the entire workflow as a Copilot skill (`resiliency-research`) that chains the research, consolidation, planner, and assessment-builder prompts in a deterministic five-phase sequence. The engineer invokes the skill once; phase outputs flow forward as inputs to the next phase without manual transfer.
+The current state packages the entire workflow as a Copilot skill (`resiliency-research`) that chains the research, consolidation, planner, and assessment-builder prompts in a deterministic five-phase sequence, preceded by a run context lock that fixes the deployment topology and regions for the run. The engineer runs the lock once and invokes the skill once; phase outputs flow forward as inputs to the next phase without manual transfer.
 
 ```mermaid
 flowchart LR
+    P0["**Phase 0: Run Context Lock**<br/>Fix deployment topology, regions,<br/>and research root for the run"]
     P1["**Phase 1: Core Research**<br/>Inventory dependencies and<br/>establish resiliency evidence baseline"]
     P2["**Phase 2: Service-Specific Research**<br/>Deep-dive analysis on each Azure<br/>service identified in Phase 1"]
     P3["**Phase 3: Consolidation**<br/>Merge all research into a single<br/>evidence report for planning handoff"]
     P4["**Phase 4: Planning**<br/>Produce executive Master report<br/>and Developer Guide remediation plan"]
     P5["**Phase 5: Code-Level Assessment Report**<br/>Assemble final per-service assessment<br/>with prioritized findings (P0-P3)"]
 
-    P1 --> P2 --> P3 --> P4 --> P5
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5
 
     classDef phase fill:#e1f5ff,stroke:#0078d4,stroke-width:2px,color:#000
-    class P1,P2,P3,P4,P5 phase
+    class P0,P1,P2,P3,P4,P5 phase
 ```
+
+## Phase 0: Run Context Lock
+
+Phase 0 is the mandatory first step of every run. `/hve-resiliency-topology-0-lock topology={active-active|active-standby}` records the deployment topology, the primary and secondary regions, and the research root for the run in `.copilot-tracking/<repo-name>-resiliency-run-context.md`. Nothing else runs until it completes; a prompt that finds no lock stops `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`.
+
+The deployment topology is a declared business decision, not something the framework discovers. There is no default and no fallback: `active-active` means both regions serve production traffic simultaneously and may write concurrently, and `active-standby` means the primary serves all traffic while the secondary stays provisioned, deployed, and continuously ready but idle until promoted. A standby region is not passive disaster recovery and is never treated as out of scope, already-solved, or lower-stakes. No later prompt may override the declared topology; repository evidence that contradicts it is recorded as a finding, not applied as a correction.
+
+Regions are resolved from the lock and default to `West US 2` primary and `West US` secondary. The two region inputs are paired, so supply both or neither. The research root defaults to `.copilot-tracking/research-<topology>/`, which lets the same repository be assessed under both topologies without artifacts colliding. Every artifact a later prompt writes is stamped with the resolved topology, both in its front matter and in its scope or assumptions section.
+
+Because the lock lives on disk, the topology and regions are not carried by chat history. Every prompt re-resolves them from the lock before it does any repository work, so they survive `/clear`, a new chat, an agent switch, and parallel subagent dispatch. The engineer declares the topology once here and is not asked for it again.
 
 ## Phase 1: Core Research
 
@@ -68,7 +79,9 @@ Phase 1 establishes the repository context and dependency inventory that every l
 
 ## Phase 2: Service-Specific Research
 
-Phase 2 runs only the prompts that match the Azure services identified in Phase 1, producing one deep-dive resiliency analysis per service. The catalog covers Application Gateway (`/hve-resiliency-researcher-8-appgw`), Azure Functions (`/hve-resiliency-researcher-9-functions`), Key Vault (`/hve-resiliency-researcher-10-keyvault`), AKS with Istio (`/hve-resiliency-researcher-11-aks-istio`), Cosmos DB including the Mongo API (`/hve-resiliency-researcher-12-cosmosdb`), Azure SQL (`/hve-resiliency-researcher-13-sql`), Azure Cache for Redis (`/hve-resiliency-researcher-14-redis`), Azure Storage (`/hve-resiliency-researcher-15-storage`), Kafka (`/hve-resiliency-researcher-16-kafka-active-active` or `/hve-resiliency-researcher-16-kafka-active-standby-confluent`, selected per the Database-to-Kafka Pairing Standard), Networking (`/hve-resiliency-researcher-17-networking`), Entra ID (`/hve-resiliency-researcher-18-entraid`), and API Management (`/hve-resiliency-researcher-19-apim`). Each prompt focuses narrowly on the failure modes, redundancy options, and configuration evidence specific to its service.
+Phase 2 runs only the prompts that match the Azure services identified in Phase 1, producing one deep-dive resiliency analysis per service. The catalog covers Application Gateway (`/hve-resiliency-researcher-8-appgw`), Azure Functions (`/hve-resiliency-researcher-9-functions`), Key Vault (`/hve-resiliency-researcher-10-keyvault`), AKS with Istio (`/hve-resiliency-researcher-11-aks-istio`), Cosmos DB including the Mongo API (`/hve-resiliency-researcher-12-cosmosdb`), Azure SQL (`/hve-resiliency-researcher-13-sql`), Azure Cache for Redis (`/hve-resiliency-researcher-14-redis`), Azure Storage (`/hve-resiliency-researcher-15-storage`), Kafka (`/hve-resiliency-researcher-16-kafka-active-active` or `/hve-resiliency-researcher-16-kafka-active-standby-confluent`, selected by the deployment topology locked in Phase 0), Networking (`/hve-resiliency-researcher-17-networking`), Entra ID (`/hve-resiliency-researcher-18-entraid`), and API Management (`/hve-resiliency-researcher-19-apim`). Each prompt focuses narrowly on the failure modes, redundancy options, and configuration evidence specific to its service.
+
+The Kafka prompt is chosen by the declared deployment topology alone: `active-active` selects the active-active prompt and `active-standby` selects the Confluent Cluster Linking prompt. It is no longer inferred from the database inventory and is no longer an operator question, so Phase 2 runs without a pause. The data write model observed in the confirmed databases (multi-master, single-master, or mixed) is a cross-check rather than a selector: the Kafka step records whether it fits the declared topology and raises a finding when it does not, but a mismatch never changes the selected prompt and never stops the run.
 
 ## Phase 3: Consolidation
 
