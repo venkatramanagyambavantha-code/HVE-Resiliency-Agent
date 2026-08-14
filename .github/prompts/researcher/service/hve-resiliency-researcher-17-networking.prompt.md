@@ -5,7 +5,9 @@ agent: "Task Researcher"
 
 # Application HVE Researcher 17 Networking Optimized
 
-Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md).
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 ## Eligibility And Scope
 
@@ -27,7 +29,6 @@ skill behavior.
 
 For every eligible networking dependency, assess readiness for both failure scenarios:
 
-* Zone failure within West US 2
 * Regional failover from West US 2 to West US
 
 ## Task Researcher Boundary
@@ -195,7 +196,7 @@ Repeat these labels exactly and in this order for every evidence-backed issue ro
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app egion failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

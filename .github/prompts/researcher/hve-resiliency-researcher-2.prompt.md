@@ -1,5 +1,5 @@
 ---
-description: Analyze region and zone assumptions with bounded discovery and exact evidence
+description: Analyze regional failover assumptions with bounded discovery and exact evidence
 agent: "Task Researcher"
 argument-hint: "prompt1a=... prompt1b=..."
 ---
@@ -26,18 +26,17 @@ create inherited primary or subagent artifacts.
 
 ## Objective
 
-Identify all evidence-confirmed region- or zone-specific assumptions in the
-current repository. Evaluate each assumption for zone failure within West US 2
-and regional failover between West US and West US 2 as part of the target
-active/active deployment.
+Identify all evidence-confirmed regional failoverassumptions in the
+current repository. Evaluate each assumption for regional failover between 
+West US and West US 2 as part of the target deployment.
 
 Cover production application code, configuration, infrastructure as code,
 deployment manifests, pipelines, scripts, and operational runbooks. Evaluate
 hard-coded region names; security values; credentials that are hard-coded or
-stored in files; zone-pinned resources; implicit defaults; single-active-region
+stored in files; implicit defaults; single-active-region
 logic; endpoints, URLs, or IP addresses; resource identifiers; deployment
 locations and topology; routing; affinity; and environment-specific values that
-reference one region or zone.
+reference one region.
 
 ## Required Steps
 
@@ -136,13 +135,13 @@ assumption. Preserve the labels exactly.
 
 Status: Complete - Findings
 
-## Region and Zone Assumptions
+## Region Assumptions
 
 * Assumption:
 * Priority: P0 / P1 / P2 / P3
 * Evidence (file path + line number)
 * Brief description of how it is used
-* Whether it materially impacts zone or region failover (Yes/No + description of why this could impact zone or region failover)
+* Whether it materially impacts regional failover (Yes/No + description of why this could impact regional failover)
 * Existing mitigations present (if any): retries/timeouts/fallbacks/feature flags/runbooks, with evidence (file path + line number)
 * Constraints/limitations (if any): dependency/platform capabilities or configuration/operational constraints that shape failover behavior, with evidence (file path + line number) when present
 ```
@@ -150,7 +149,7 @@ Status: Complete - Findings
 For `Complete - No Findings`, write the same H1, status, and H2 followed by:
 
 ```text
-No evidence-confirmed region- or zone-specific assumptions were found within the validated dependency scope and completed manifest, candidate scan, candidate disposition, and evidence audit.
+No evidence-confirmed regional failover assumptions were found within the validated dependency scope and completed manifest, candidate scan, candidate disposition, and evidence audit.
 ```
 
 For `Incomplete`, do not use either complete form or imply that no findings

@@ -5,12 +5,13 @@ agent: Task Researcher
 
 # Application HVE Researcher 9 Azure Functions
 
-Use [Application Platform Context](../../instructions/hve-resiliency-platform-context.instructions.md).
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
-Define the required zone-failure and regional-failover expectations for
+Define the required regional-failover expectations for
 {customerName} Azure Functions in West US 2 and West US. Assess only Azure
-Functions behavior and requirements that directly affect zone failure or
-regional failover.
+Functions behavior and requirements that directly affect regional failover.
 
 ## Functions Requirements
 
@@ -87,7 +88,7 @@ Repeat for each finding:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app regional failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

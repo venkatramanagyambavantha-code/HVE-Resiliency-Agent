@@ -18,11 +18,11 @@ Inventory every repository file once, including extensionless operations. Exclud
 Resolve this bounded negative matrix:
 
 * Compute: Azure Kubernetes Service (AKS), Azure Functions, Azure App Service
-* Edge: Azure API Management, Application Gateway, Front Door, Traffic Manager, Load Balancer, DNS
-* Data: Cosmos DB, Azure SQL Database/Managed Instance, Azure Storage by subtype, Azure Managed Redis
-* Messaging: Azure Service Bus, Azure Event Hubs
+* Edge: Azure API Management, Application Gateway
+* Data: Cosmos DB for MongoDB, Azure SQL Database/Managed Instance, Azure Storage by subtype, Azure Managed Redis
+* Messaging: Confluent Cloud Kafka
 * Identity/configuration: Entra ID, Managed/Workload Identity, Key Vault, App Configuration
-* Observability: Azure Monitor, Application Insights, Log Analytics
+* Observability: Azure Monitor
 * Delivery: Azure Container Registry
 
 Add positively evidenced services. Use specific nonduplicative names; never claim universal absence.

@@ -5,7 +5,9 @@ agent: Task Researcher
 
 # Application HVE Researcher 11 AKS and Istio
 
-Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md).
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 Act as a cloud resiliency architect focusing on AKS and Istio. This application
 runs on AKS with Istio in a multi-region setup, with traffic routed through a
@@ -13,8 +15,7 @@ Global Load Balancer.
 
 ## Assessment Scope
 
-Assess only application code and configuration, not infrastructure, for zone
-failure within West US 2 and regional failover from West US 2 to West US.
+Assess only application code and configuration, not infrastructure, for regional failover between West US 2 and West US.
 Evaluate these ten questions without adding assessment areas:
 
 * Are timeouts defined for all outbound calls?

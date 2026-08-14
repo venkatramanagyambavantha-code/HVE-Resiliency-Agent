@@ -5,7 +5,9 @@ agent: "Task Researcher"
 
 # Application HVE Researcher 19 APIM Optimized
 
-Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md).
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 ## Eligibility Gate
 
@@ -48,12 +50,11 @@ assumption as evidence:
 
 ## Assessment Scope
 
-For each eligible APIM dependency, assess both zone failure within West US 2 and
-regional failover from West US 2 to West US. Evaluate exactly these existing
+For each eligible APIM dependency, assess regional failover between West US 2 and West US. Evaluate exactly these existing
 criteria:
 
 1. Alignment of Global Load Balancer and backend health probes.
-2. Application and data behavior during a zone or regional outage.
+2. Application and data behavior during regional outage.
 3. Retries, timeouts, and exponential backoff.
 4. Stateless operation or correct active-active or active-passive behavior.
 5. Pre-scaling or autoscaling of AKS, App Service, or VM backends for failover traffic.
@@ -62,9 +63,8 @@ criteria:
 7. Protection against data loss, duplicate charges, and prolonged downtime during
    regional failover.
 
-The two preserved failure scenarios are zone failure within West US 2 and regional
-failover from West US 2 to West US. For one eligible APIM dependency, the seven
-criteria across these two scenarios create fourteen scenario-specific
+The preserved failure scenario is regional failover between West US 2 and West US. For one eligible APIM dependency, the seven
+criteria across this scenario create seven scenario-specific
 dependency-criterion pairs. Evaluate every pair independently within the dependency's
 shared counters. Keep distinct evidenced failure modes in separate issue rows; never
 combine scenarios.
@@ -148,21 +148,6 @@ block. When an evidence-backed issue has an unresolved existing field, use the
 applicable schema-safe Unknown wording in that field. Emit distinct issue rows for
 distinct evidenced failure modes. Do not combine unrelated failure modes in one row.
 
-## Priority Classification
-
-Classify each evidence-backed issue using the Application Platform Context:
-
-* P0: Critical or blocking. Causes outage, data loss, duplicate charges, or inability
-  to fail over safely during zone or regional failure.
-* P1: Required, non-blocking. Materially increases application risk, data risk, or
-  customer impact during failure without fully blocking failover.
-* P2: Improvement or best practice. Weakens resilience posture or operational clarity
-  without materially affecting failover correctness.
-* P3: Non-blocking code consistency. Covers maintainability, readability, duplication,
-  or inconsistent patterns that are non-blocking.
-
-Explain why the selected priority applies using cited evidence. Do not include
-remediation language.
 
 ## Report Outcomes And Immediate Stopping
 
@@ -203,7 +188,7 @@ For every evidence-backed issue, repeat exactly these six fields in this order:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app region failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 

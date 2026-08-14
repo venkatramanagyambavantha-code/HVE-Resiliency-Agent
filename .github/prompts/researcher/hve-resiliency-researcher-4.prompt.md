@@ -28,10 +28,10 @@ Analyze only these existing state and data areas:
 * Caching behavior
 * Event ordering
 * Idempotency or its absence
-* Facts-only data-loss potential: where loss could occur, the zone-loss, regional-failover, or partial-dependency-outage condition, and the writes, messages, or records at risk
+* Facts-only data-loss potential: where loss could occur, the regional-failover, or partial-dependency-outage condition, and the writes, messages, or records at risk
 * Existing mitigations already present, including idempotency guards, retry or timeout policies, fallback logic, and feature flags
-* Constraints or limitations that affect correctness during zone or regional failure, including consistency models, replication lag, write restrictions, and operational failover steps
-* Risks that could surface during zone or regional failover
+* Constraints or limitations that affect correctness during regional failure, including consistency models, replication lag, write restrictions, and operational failover steps
+* Risks that could surface during regional failover
 
 Do not add an assessment topic. Cite repository file-lines for every known characteristic, causal behavior, mitigation, constraint, limitation, and failover-risk claim.
 
@@ -68,7 +68,7 @@ Write exactly these three sections, labels, and order. Add no field or section. 
 	* `Constraints/limitations (if any): with evidence`
 2. `Data Loss Potential (Facts Only)`
 	* `Where loss could occur:`
-	* `Failure condition (zone loss/regional failover/partial outage):`
+	* `Failure condition (regional failover/partial outage):`
 	* `Writes/messages/records at risk:`
 	* `Priority: P0 / P1 / P2 / P3`
 	* `Evidence: <file path>:<line>`

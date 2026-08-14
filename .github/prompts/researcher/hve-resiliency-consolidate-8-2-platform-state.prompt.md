@@ -36,7 +36,7 @@ Emit provisional Section 8 residual candidates only for the `platform-state` gro
 
 Platform-state residual discovery hints (evidence-only):
 
-* Region and zone observations from Prompt 2 that Section 3 (Region and Zone Assumptions) does not primary-claim and that map to no other section.
+* Region and zone observations from Prompt 2 that Section 3 (Region Assumptions) does not primary-claim and that map to no other section.
 * State and data characteristics observations from Prompt 3 that Section 4 (State and Data Characteristics) does not primary-claim and that map to no other section.
 * Prompt 4 observations that Section 5 (Failure and Degraded-Mode Behavior) does not primary-claim and that map to no other section, restricted to platform-context evidence rather than direct failure-mode evidence.
 

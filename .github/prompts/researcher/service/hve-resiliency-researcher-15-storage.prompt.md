@@ -1,21 +1,20 @@
 ---
-description: Assess confirmed Azure Storage dependencies for zone and regional resilience
+description: Assess confirmed Azure Storage dependencies for regional resilience
 agent: "Task Researcher"
 ---
 
 # Application HVE Researcher 15 Azure Storage
 
 Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
-for shared terminology. The controls in this prompt remain authoritative when
-context inheritance or a generic agent behavior differs.
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 ## Objective And Execution Boundary
 
 Assess only evidence-confirmed Azure Storage dependencies in the current
 repository. Evaluate these two scenarios independently:
 
-1. Zone failure within West US 2
-2. Full regional failover between West US 2 and West US
+1. Full regional failover between West US 2 and West US
 
 This invocation executes only Prompt 15. Keep all repository interaction
 read-only except for the Prompt 15 research artifact. Do not perform another
@@ -140,7 +139,7 @@ generic-Storage outcomes. Keep these as prerequisite coverage citations only.
 Never copy them into a finding or use them to satisfy finding evidence.
 
 ## Immutable Production Source Manifest
-
+* Why this is a risk to app or region failover:
 After the prerequisite gate passes, create one sorted, deduplicated, text-only
 manifest and never enumerate files again. Include existing files only from
 these roots, in this precedence order:
@@ -182,7 +181,7 @@ because results were sparse.
 1. Service identity and binding: Blob, Files, Queue, Table, SDK/client/API, Azure resource type or ID, endpoint, connection binding, deployment resource
 2. Writes and consistency: write/create/update/upload, concurrent or single writer, retry, idempotency, ETag, metadata, version, conflict
 3. Failure behavior: timeout, exception, fallback, alternate endpoint, endpoint selection, failover, failback, degraded read or write
-4. Replication and topology: region, zone, West US 2, West US, primary, secondary, redundancy, LRS, ZRS, GRS, GZRS, RA-GRS, RA-GZRS, synchronous, asynchronous
+4. Replication and topology: region, West US 2, West US, primary, secondary, redundancy, LRS, ZRS, GRS, GZRS, RA-GRS, RA-GZRS, synchronous, asynchronous
 5. Operations: runbook, manual step, account failover, DNS, routing, recovery, rollback, data-loss statement
 6. Health signaling: health, ready, live, probe, GLB, upstream routing, dependency readiness
 
@@ -365,7 +364,7 @@ field to a finding row and do not repeat field semantics elsewhere.
 * `Issue Description:` Begin with `<finding-id> | <scenario> | <Storage service type> | <failure mode>`, followed by the evidence-bound observation. None of the four required identifiers can be `Unknown`.
 * `Risk Level (P0/P1/P2/P3):` Use one priority from the authoritative framework. `Unknown` is prohibited.
 * `Code location (file + line number):` Provide one or more validated, sanitized repository-relative file-line citations. `Unknown` is prohibited.
-* `Why this is a risk to app, zone or region failover:` State the evidenced scenario-specific failure effect that supports the priority. `Unknown` is prohibited.
+* `Why this is a risk to app region failover:` State the evidenced scenario-specific failure effect that supports the priority. `Unknown` is prohibited.
 * `Impact(s) if this is not changed:` State only evidenced impacts; use `Unknown` when repository evidence does not establish the impact beyond the supported failure effect.
 * `Existing mitigations present (evidence):` State evidenced mitigations with citations, `None found within bounded coverage`, or `Unknown` when operational evidence is unavailable.
 * `Constraints/limitations (evidence):` State evidenced constraints with citations, `None found within bounded coverage`, or `Unknown` when operational evidence is unavailable.

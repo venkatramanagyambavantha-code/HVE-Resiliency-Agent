@@ -1,13 +1,13 @@
 ---
-description: "Assess Cosmos DB Mongo API zone and regional failover evidence with bounded repository research"
+description: "Assess Cosmos DB Mongo API regional failover evidence with bounded repository research"
 argument-hint: "prompt1aArtifactPath=... prompt1bArtifactPath=..."
 ---
 
 # Application HVE Researcher 12 Cosmos DB
 
 Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
-as supporting context. Apply every safety-critical scenario, evidence, priority, terminal, and handoff
-control in this prompt directly even when that instructions file is not auto-applied.
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 ## Inputs
 
@@ -27,8 +27,7 @@ repository evidence and report factual evidence gaps instead of assumptions.
 
 Assess only the current repository for these authoritative scenarios, one scenario per finding:
 
-* Zone failure within West US 2
-* Full regional failover from West US 2 to West US
+* Full regional failover between West US 2 and West US
 
 Treat East US, active-active or multi-region writes, Last Write Wins, the RU model, Mongo API behavior,
 and no-data-loss expectations as claims to verify or as constraints or evidence gaps. Do not assume they
@@ -225,7 +224,7 @@ citations do not replace file-and-line evidence for positive or source-local ass
 
 Classify each rendered finding with exactly one evidence-supported priority:
 
-* P0: Critical or blocking behavior that causes outage, data loss, duplicate charges, or inability to fail over safely during zone or regional failure
+* P0: Critical or blocking behavior that causes outage, data loss, duplicate charges, or inability to fail over safely during regional failure
 * P1: Required, non-blocking behavior that materially increases application risk, data risk, or customer impact during failure
 * P2: An improvement or best practice that does not materially impact correctness during failover but weakens resilience posture or operational clarity
 * P3: Non-blocking maintainability, readability, duplication, or consistency behavior
@@ -274,7 +273,7 @@ Render each valid finding once with exactly these fields and in this order:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app region failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

@@ -1,15 +1,19 @@
 ---
-description: Assess repository evidence for Application Gateway zone and regional resiliency
+description: Assess repository evidence for Application Gateway regional resiliency
 ---
 
 # Application HVE Researcher 8 App Gateway
+
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 Run Prompt 8 only. Do not invoke earlier workflow prompts or another agent.
 
 ## Scope
 
-Assess Application Gateway for West US 2 zone loss and West US failover:
-zone redundancy; regional/global routing; scaling, capacity, probes, backend
+Assess Application Gateway for regional loss of West US 2 or West US;
+regional/global routing; scaling, capacity, probes, backend
 health, WAF, policy, DNS, configuration, endpoints, direct DNS/IP dependencies,
 retries/timeouts/exponential backoff, application state, backend failover scaling, cold starts,
 region-local certificate/secret sourcing, cross-region dependencies, and impacts.
@@ -92,7 +96,7 @@ Repeat per finding:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app regional failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

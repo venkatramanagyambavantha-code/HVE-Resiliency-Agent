@@ -5,7 +5,9 @@ agent: "Task Researcher"
 
 # HVE Resiliency Researcher 16 Kafka Active-Active
 
-Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md).
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 Kafka runs on Confluent Cloud; treat that as a confirmed platform fact and do not ask the operator which Kafka provider or environment is in use.
 
@@ -29,8 +31,7 @@ Apply the inherited service exclusion rule. Analyze only Kafka dependencies conf
 as used in Prompt 1 Section 1. Treat dependencies classified as Checked But Not Present
 or Not Applicable as excluded.
 
-For every eligible Kafka dependency, assess readiness for zone failure within West US
-2 and regional failover from West US 2 to West US.
+For every eligible Kafka dependency, assess readiness for regional failover between West US 2 and West US.
 
 ## Task Researcher Boundary
 
@@ -57,8 +58,7 @@ contract:
 * Feature-flag transitions, dual-source reads, retries, replication, replay, and
   rebalances must not create duplicate business processing.
 * DNS bootstrap, `advertised.listeners` broker metadata, GLB health routing, backend
-  probes, and client reconnect behavior remain effective through broker restart, zone
-  failure, and regional failover.
+  probes, and client reconnect behavior remain effective through broker restart, regional failover.
 
 Region affinity in steady state is required and is not a defect. On regional failover,
 consumers use the feature flag to select the failed region's mirror topic in the

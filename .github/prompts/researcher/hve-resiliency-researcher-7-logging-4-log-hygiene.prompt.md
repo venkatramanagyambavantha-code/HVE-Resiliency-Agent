@@ -54,7 +54,7 @@ For every log-hygiene inventory row, emit the Required Inventory Row Schema from
 
 For every log-hygiene finding, emit the Required Finding Schema from the shared contract using section-scoped IDs of the form `F-7-log-hygiene-00X`, assigned in emission order starting at `F-7-log-hygiene-001`.
 
-Never combine zone-failure and regional-failover evidence in one row or finding. If the same dependency plus entrypoint applies to both scenarios with materially different behavior, emit two findings.
+Never combine regional-failover and partial-outage evidence in one row. If the same dependency plus entrypoint applies to both scenarios with materially different behavior, emit two findings.
 
 ## Output
 

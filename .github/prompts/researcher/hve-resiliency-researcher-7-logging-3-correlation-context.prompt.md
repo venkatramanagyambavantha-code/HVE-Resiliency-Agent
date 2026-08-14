@@ -49,7 +49,7 @@ For every correlation-context inventory row, emit the Required Inventory Row Sch
 
 For every correlation-context finding, emit the Required Finding Schema from the shared contract using section-scoped IDs of the form `F-7-correlation-context-00X`, assigned in emission order starting at `F-7-correlation-context-001`.
 
-Never combine zone-failure and regional-failover evidence in one row or finding. If the same dependency plus entrypoint applies to both scenarios with materially different behavior, emit two findings.
+Never combine regional-failover and partial-outage evidence in one row. If the same dependency plus entrypoint applies to both scenarios with materially different behavior, emit two findings.
 
 ## Output
 

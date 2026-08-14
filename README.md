@@ -160,7 +160,7 @@ After running the workflow, you will obtain:
 - Backlog-ready resiliency assessment aligned with Microsoft frameworks
 
 Example:
-[View sample assessment](Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment.md)
+[View sample assessment](Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment_v2.md)
 
 ---
 
@@ -233,7 +233,7 @@ The framework follows an application-centric, evidence-first flow built on HVE C
 | 5. Assessment       | `planner-3a` … `planner-3d`                                 | User-gated,`/clear` between steps.        |
 | 6. Evidence Audit (optional) | `fix-assessment-finding` (per tier: P0, P1, P2, P3)      | Backstop; verifies citations and code against the repo. |
 
-A worked example output lives at [Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment.md](Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment.md). Per-phase descriptions, workflow evolution diagrams, and the post-Phase-5 backlog import flow are covered in the guides linked from [Documentation](#documentation).
+A worked example output lives at [Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment_v2.md](Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment_v2.md). Per-phase descriptions, workflow evolution diagrams, and the post-Phase-5 backlog import flow are covered in the guides linked from [Documentation](#documentation).
 
 ## Repository layout
 

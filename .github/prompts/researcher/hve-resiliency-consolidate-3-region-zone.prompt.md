@@ -1,10 +1,10 @@
 ---
-description: Fill Section 3 (Region and Zone Assumptions) of the consolidated resiliency research document from Prompt 2 evidence
+description: Fill Section 3 (Region Assumptions) of the consolidated resiliency research document from Prompt 2 evidence
 agent: "Task Researcher"
 argument-hint: "[manifestPath=...] [consolidatedDocPath=...]"
 ---
 
-# HVE Resiliency Consolidate 3 - Region and Zone Assumptions
+# HVE Resiliency Consolidate 3 - Region Assumptions
 
 Follow the [Consolidation Shared Contract](../../instructions/hve-resiliency-consolidation-shared.instructions.md) for the manifest contract, sanitization, line-number integrity, the Required Finding Schema, schema-safe values, and evidence-only prohibitions. This prompt fills Section 3 only and writes a section fragment file. It never writes the shared consolidated document and never re-runs discovery.
 
@@ -24,11 +24,11 @@ Render evidence-backed region or zone assumptions from code, configuration, depl
 1. Load the manifest and confirm the Section 3 read scope.
 2. Read each routed artifact's bytes once; sanitize immediately.
 3. Normalize findings into source records and deduplicate within the section on the shared canonical-tuple identity, preserving every contributing record ID.
-4. Render each finding using the Required Finding Schema with section-scoped IDs `F-3-00X`. Never combine zone and regional evidence in one finding.
+4. Render each finding using the Required Finding Schema with section-scoped IDs `F-3-00X`. Never combine zone and regional evidence in one finding. 
 
 ## Output
 
-Write the Section 3 fragment to `<consolidatedDocDir>/sections/section-3.md` beginning with the `## 3. Region and Zone Assumptions` heading. Do not modify the consolidated document; finalize assembles fragments.
+Write the Section 3 fragment to `<consolidatedDocDir>/sections/section-3.md` beginning with the `## 3. Region Assumptions` heading. Do not modify the consolidated document; finalize assembles fragments.
 
 ## Completion
 

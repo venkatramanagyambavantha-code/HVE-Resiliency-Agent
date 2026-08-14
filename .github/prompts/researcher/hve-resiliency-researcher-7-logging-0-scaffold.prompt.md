@@ -57,7 +57,7 @@ Emit the Prompt 7 skeleton artifact at `<researchRoot>/YYYY-MM-DD/<repo-name>-hv
 <!-- markdownlint-disable-file -->
 ---
 title: <repo-name> Production Logging and Silent-Outage Diagnostics (Researcher 7 Logging)
-description: Evidence-only inventory of current logging plus prioritized gaps and risks in production observability, evaluated against West US 2 zone loss and West US 2 to West US regional failover
+description: Evidence-only inventory of current logging plus prioritized gaps and risks in production observability, evaluated between West US 2 and West US regional failover
 ms.date: YYYY-MM-DD
 ms.topic: research
 source-prompt: hve-resiliency-researcher-7-logging
@@ -69,7 +69,7 @@ pipeline-stage: scaffold
 
 ## Scope and Assumptions
 
-- Scope: Production logging inventory and silent-outage diagnostic gaps for `<repo-name>`, for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated against West US 2 zone loss and West US 2 to West US regional failover.
+- Scope: Production logging inventory and silent-outage diagnostic gaps for `<repo-name>`, for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between West US 2 and West US regional failover.
 - Eligible dependencies frozen by the scaffold manifest: see `<manifest-path>`.
 - Payment applicability frozen by the scaffold manifest.
 - Excluded per platform Service Exclusion Rule: every dependency classified in Prompt 1a Section 2 or 3 and Prompt 1b Section 2 or 3.

@@ -1,12 +1,12 @@
 ---
-description: Research Entra ID resiliency for Application Platform zone and regional failure
+description: Research Entra ID resiliency for Application Platform regional failure
 ---
 
 # Application HVE Researcher 18 Entra ID
 
-Follow the safety-critical controls in this prompt. The linked
-[Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
-is supplementary because its current `applyTo` patterns do not cover this nested path.
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 ## Scope
 
@@ -21,8 +21,7 @@ Research only the existing Entra ID assessment surfaces:
 
 Assess each applicable surface independently for:
 
-* Zone failure within West US 2
-* Full regional failover from West US 2 to West US
+* Full regional failover between West US 2 and West US
 
 Use repository evidence only. Do not provide remediation, recommendations, tuning,
 implementation guidance, or code examples. Do not infer Entra service topology,
@@ -144,22 +143,6 @@ Use one terminal status:
 * `BLOCKED_PREREQUISITES`, `NOT_APPLICABLE`, `EVIDENCE_INSUFFICIENT`, or
    `ENTRA_PROOF_NOT_MET` as defined above
 
-## Priority Classification
-
-Classify only evidence-backed findings. Unknown or unsupported assumptions are not
-findings.
-
-* P0: Critical / Blocking. Causes outage, data loss, duplicate charges, or inability to
-   fail over safely during zone or regional failure.
-* P1: Required, Non-Blocking. Does not fully block failover but materially increases
-   application risk, data risk, or customer impact during failure.
-* P2: Improvement / Best Practice. Does not materially impact correctness during
-   failover but weakens resilience posture or operational clarity.
-* P3: Non-Blocking Code Consistency. Captures maintainability, readability, duplication,
-   or inconsistent pattern issues that are non-blocking.
-
-The risk rationale must cite the observed consequence for the named scenario. Use P3
-only for code consistency concerns that do not affect failover correctness.
 
 ## Research Artifact
 
@@ -186,7 +169,7 @@ Under `Findings`, repeat this exact field schema for every finding row:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app region failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

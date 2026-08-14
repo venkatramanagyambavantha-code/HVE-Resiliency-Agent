@@ -71,7 +71,7 @@ Evaluate payment only when repository-confirmed. Otherwise run one negative paym
 
 ## Priority Definitions
 
-* P0: Critical / Blocking. Causes outage, data loss, duplicate charges, or unsafe zone or regional failover.
+* P0: Critical / Blocking. Causes outage, data loss, duplicate charges, or unsafe regional failover.
 * P1: Required, Non-Blocking. Materially increases application risk, data risk, or customer impact during failure without blocking failover.
 * P2: Improvement / Best Practice. Weakens resilience or operational clarity without materially affecting failover correctness.
 * P3: Non-Blocking Code Consistency. Covers non-blocking maintainability, readability, duplication, or inconsistent patterns.

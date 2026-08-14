@@ -1,5 +1,5 @@
 ---
-description: "Assess Key Vault zone and regional failover evidence with bounded, sanitized repository research"
+description: "Assess Key Vault regional failover evidence with bounded, sanitized repository research"
 agent: "Task Researcher"
 argument-hint: "prompt1aArtifactPath=... prompt1bArtifactPath=..."
 ---
@@ -30,8 +30,7 @@ render, and verification bounds in this prompt.
 
 Assess only the current repository for these scenarios:
 
-* Zone failure within West US 2
-* Full regional failover from West US 2 to West US
+* Full regional failover between West US 2 and West US
 
 Assess only these seven Key Vault areas:
 
@@ -163,7 +162,7 @@ the candidate as an evidence gap and do not render it. Count unsupported and nar
 metrics.
 
 Emit one complete finding for every distinct dependency or category, scenario, and materially distinct
-failure-mode evidence chain. Keep zone and regional findings separate when risk, priority, impacts,
+failure-mode evidence chain. Keep regional findings separate when risk, priority, impacts,
 mitigations, constraints, or evidence differ. Merge only exact semantic identities, retain every source
 candidate ID, preserve the highest evidence-supported priority, and retain conflicting context as a
 constraint or conflict disposition.
@@ -220,7 +219,7 @@ with this centralized service schema:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app region failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

@@ -5,7 +5,9 @@ agent: Task Researcher
 
 # Application HVE Researcher 14 Redis
 
-Use [Application Platform Context](../../instructions/hve-resiliency-platform-context.instructions.md).
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
 
 ## Eligibility And Scope
 
@@ -17,8 +19,7 @@ infer eligibility, search for replacement eligibility evidence, or fall back to 
 0, another prompt, or conditional skill behavior.
 
 Review each confirmed dependency as Azure Managed Redis Enterprise in an active-active,
-multi-region configuration with eventual consistency. Assess readiness for zone failure
-within West US 2 and regional failover from West US 2 to West US.
+multi-region configuration with eventual consistency. Assess readiness for regional failover between West US 2 and West US.
 
 ## Task Researcher Boundary
 
@@ -140,7 +141,7 @@ templates. Repeat these labels exactly, in this order, for each issue:
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):
 * Code location (file + line number):
-* Why this is a risk to app, zone or region failover:
+* Why this is a risk to app region failover:
 * Impact(s) if this is not changed:
 * Existing mitigations present (evidence):
 * Constraints/limitations (evidence):

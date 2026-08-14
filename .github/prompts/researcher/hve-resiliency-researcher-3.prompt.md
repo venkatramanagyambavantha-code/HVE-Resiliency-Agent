@@ -47,8 +47,7 @@ Re-verify a carried-forward citation only when it is internally contradictory, c
 
 Analyze each eligible Azure and non-Azure dependency used by this repository for survivability during both scenarios:
 
-* Zone failure within West US 2
-* Full regional failover from West US 2 to West US
+* Full regional failover between West US 2 and West US
 
 Determine from code or configuration whether endpoints, credentials, or identities assume a single region and whether fallback or multi-region logic exists. For each Azure dependency, verify whether the application implements a dependency health check and reflects that health state in readiness or health endpoints that drive GLB routing decisions.
 
@@ -71,7 +70,7 @@ Run exactly one repository survey pass at the start of Round 1, before any per-d
 
 Build one path-only manifest of production application source, configuration, infrastructure as code, deployment manifests, and pipeline definitions. Exclude `.git/**`, `.copilot-tracking/**`, generated outputs, caches, binaries, vendored dependencies, and prompt artifacts.
 
-Across that manifest, run one broad multi-pattern scan covering every eligible dependency identity and alias together with the survivability signal families in the Assessment Scope: endpoint, host, and connection targets; region and zone identifiers; credential and identity bindings; retry, timeout, circuit-breaker, and fallback constructs; multi-region or failover selection logic; health check registration; and readiness or liveness probe definitions. One scan may bundle multiple expressions in one tool invocation or one local scanner pass. Result pagination and refinement of a truncated query belong to this single pass and do not make it a second pass.
+Across that manifest, run one broad multi-pattern scan covering every eligible dependency identity and alias together with the survivability signal families in the Assessment Scope: endpoint, host, and connection targets; region identifiers; credential and identity bindings; retry, timeout, circuit-breaker, and fallback constructs; multi-region or failover selection logic; health check registration; and readiness or liveness probe definitions. One scan may bundle multiple expressions in one tool invocation or one local scanner pass. Result pagination and refinement of a truncated query belong to this single pass and do not make it a second pass.
 
 Record the survey results as a candidate ledger holding only a stable candidate ID, canonical path, line range, matched signal family, and the dependency it binds to. Do not open files during the survey pass; the pass locates evidence, it does not read it.
 
@@ -114,7 +113,7 @@ If production discovery is requested and approval is denied or any contract elem
 
 * Support every positive or negative finding claim with causal repository or approved production evidence, or with a citation carried forward under Prerequisite Evidence Admissibility. Repository citations include file path and line number. Production citations identify the approved source, bounded query or record reference, and time window without exposing secrets.
 * Absence of evidence is not evidence of absence. When bounded sources are exhausted, place each unresolved existing criterion in the report-level Unknown summary and do not fabricate a citation or finding.
-* Emit a finding row only for an evidenced dependency and failure-mode pair. Use distinct rows for distinct pairs; never merge West US 2 zone failure and West US 2-to-West US regional failover into one row.
+* Emit a finding row only for an evidenced dependency and failure-mode pair. Use distinct rows for distinct pairs. Do not merge findings for different dependencies, failure modes, or criteria.
 * Keep report status, Unknown summaries, checked-without-finding dependencies, source limitations, counters, and blocked or non-finding states outside repeated finding rows. Never create a synthetic finding row for an Unknown or terminal state.
 * Record required usage information only in the existing usage field. In the existing material-impact field, record Yes or No, one P0-P3 classification, and the evidence-backed impact rationale exactly once. Do not duplicate impact prose elsewhere in the row.
 * Use only evidenced values in finding rows. For optional mitigation or constraint details not established within the allowance, state that no value was evidenced within bounded discovery without claiming that none exists, and list the unresolved criterion in the report-level Unknown summary.
@@ -162,7 +161,7 @@ For each finding include these fields exactly once and in this order. Do not add
 
 * Evidence (file path + line number)
 * Brief description of how it is used
-* Whether it materially impacts zone or region failover (Yes/No + description of why this could impact zone or region failover)
+* Whether it materially impacts regional failover (Yes/No + description of why this could impact regional failover)
 * Existing mitigations present (if any): retries/timeouts/fallbacks/multi-region selection/failover logic, with evidence (file path + line number)
 * Constraints/limitations (if any): dependency/platform capabilities or configuration/operational constraints that shape failover behavior, with evidence (file path + line number) when present
 * For each Azure service dependency, explicitly verify whether the application implements a health check for that dependency and whether the resulting health state is reflected in the service's readiness/health endpoints that drive GLB routing decisions (cite file + line evidence). If no health-to-GLB linkage exists, record that as a finding with evidence.

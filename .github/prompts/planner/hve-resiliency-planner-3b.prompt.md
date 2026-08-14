@@ -78,8 +78,10 @@ Every P0 and P1 finding uses this exact format (field order must be preserved):
 
 Priority labels:
 
-* P0: `Failover-Blocking Risk`
-* P1: `Multi-Region Resiliency Gap`
+* P0: Blocking/Critical Risk
+* P1: High Priority
+* P2: Improvement/Best Practice (Non-Blocking)
+* P3: Non-Blocking Code Consistency (Best Practices / Maintainability)
 
 #### Finding Rules
 

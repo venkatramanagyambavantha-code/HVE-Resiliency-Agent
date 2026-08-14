@@ -65,7 +65,7 @@ pipeline-stage: scaffold
 
 ## Scope and Assumptions
 
-- Scope: Failure and degraded mode behavior of `<repo-name>` for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated against West US 2 zone loss and West US 2 to West US regional failover.
+- Scope: Failure and degraded mode behavior of `<repo-name>` for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between West US 2 and West US regional failover.
 - Eligible dependencies frozen by the scaffold manifest: see `<manifest-path>`.
 - Excluded per platform Service Exclusion Rule: every dependency classified in Prompt 1a Section 2 or 3 and Prompt 1b Section 2 or 3.
 

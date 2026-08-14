@@ -4,6 +4,10 @@ description: Run bounded Prompt 16 Kafka Active-Standby-Confluent resiliency res
 
 # HVE Resiliency Researcher 16 Kafka Active-Standby-Confluent
 
+Use [Application Platform Context](../../../instructions/hve-resiliency-platform-context.instructions.md)
+as supporting context. Apply every safety-critical control in this prompt directly, regardless of
+whether that instructions file is auto-applied.
+
 Execute this self-contained, read-only research workflow to completion. Do not use generic Task Researcher alternatives or rely on nested instruction, skill, or agent resolution.
 
 ## Scope And Safety Controls

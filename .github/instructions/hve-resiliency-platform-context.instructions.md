@@ -1,6 +1,6 @@
 ---
 description: Application Platform context and evidence-only rules for resiliency research prompts
-applyTo: '.github/prompts/researcher/hve-resiliency-researcher-*.prompt.md, .github/prompts/service/hve-resiliency-researcher-*.prompt.md'
+applyTo: '.github/prompts/researcher/hve-resiliency-researcher-*.prompt.md, .github/prompts/researcher/service/hve-resiliency-researcher-*.prompt.md'
 ---
 
 # Application Platform Context
@@ -8,8 +8,7 @@ applyTo: '.github/prompts/researcher/hve-resiliency-researcher-*.prompt.md, .git
 Apply this context to all Application Platform resiliency research prompts.
 
 * Albertsons operates applications in Azure
-* Validating readiness for zone failure within West US 2
-* Validating readiness for full regional failover from West US 2 to West US
+* Validating readiness for full application regional failover between West US 2 and West US
 * Scope is the current repository within the Application Platform
 * HVE Task Researcher rules: evidence only, no remediation, no code examples
 * All findings must cite file and line-level evidence
@@ -19,16 +18,58 @@ Apply this context to all Application Platform resiliency research prompts.
 
 ## Status and Failure Semantics
 
-Every prompt ends in exactly one terminal state: `Complete`, `Incomplete`, or `Blocked`. Blocking is reserved for one condition only and is never used for anything discovered inside the repository under assessment. This section is never overridden by a prompt's stage-specific rules.
+Status is reported on three independent axes. Never collapse them into a single value and never emit a value outside these closed lists. This section is never overridden by a prompt's stage-specific rules.
 
-**Repository and content conditions are findings, never failures.** Anything learned by scanning the repository under assessment is recorded in-band and the run continues. Never stop `Blocked` and never mark the run `Incomplete` for any of these:
+| Axis                 | Values                                                         | Reported by                                 |
+|----------------------|----------------------------------------------------------------|---------------------------------------------|
+| Run status           | `Complete`, `Incomplete`, `Blocked`                             | Every prompt, exactly once                  |
+| Run disposition      | `Findings`, `No Findings`, `Not Applicable`, `Bounded Partial`  | Every prompt whose run status is `Complete` |
+| Verification verdict | `Verified`, `Manual Review Required`                            | Verify prompts only                         |
 
-* Ambiguous, contradictory, or unprovable evidence in the repository: render the affected field or finding with the schema's `Unknown` / `Unknown: evidence unavailable` value and continue.
+Emit them as literal lines: `Run Status: <value>`, `Disposition: <value>`, and for verify prompts `Verdict: <value>`.
+
+### Run Status
+
+Run status is the only value the orchestrator gates on, and it is compared by exact string equality. Use the exact casing above. `Completed`, `COMPLETE`, `blocked-prerequisite`, and suffixed forms such as `Complete - Findings` or `Complete with no evidence` are invalid; the qualifier belongs in the disposition.
+
+* `Complete`: this prompt finished its own stage and wrote its own output. Always accompanied by a disposition.
+* `Incomplete`: this prompt could not finish its own stage and its output must not be consumed downstream. State the reason in one line. Reserve this for a defect in the run itself, never for what the repository contains.
+* `Blocked`: broken pipeline only, as defined below.
+
+A prompt sets only its own run status. It never sets the status of another stage or of the pipeline as a whole.
+
+### Run Disposition
+
+Disposition records what a completed run produced. It carries no failure meaning and never affects the orchestrator gate.
+
+* `Findings`: the stage ran and produced at least one finding or row.
+* `No Findings`: the stage ran to completion across its full scope and found nothing to record. This is a successful result.
+* `Not Applicable`: the stage was correctly skipped because its subject is out of scope for this repository, most often a service prompt whose dependency was classified as absent in Prompt 1a or 1b Section 2 or 3. No traversal is performed and no findings are rendered.
+* `Bounded Partial`: the stage stopped at a declared traversal, budget, or tool bound with usable output. Name the bound and what was left uncovered. `Bounded Partial` output is authorized to hand off downstream; `Incomplete` output is not. When choosing between the two, ask whether the next stage can safely consume the output: if it can, the run is `Complete` / `Bounded Partial`.
+
+### Verification Verdict
+
+Verify prompts report a verdict in addition to their own run status. A verify prompt that finishes its audit is `Complete` no matter what it found; the verdict, not the status, carries the audit result.
+
+* `Verified`: every audited record passed every check.
+* `Manual Review Required`: at least one audited record carries a non-`ok` disposition. List them. The orchestrator halts the pipeline on this verdict.
+
+### Repository and Content Conditions Are Findings, Never Failures
+
+Anything learned by scanning the repository under assessment is recorded in-band and the run continues. Never stop `Blocked` and never mark the run `Incomplete` for any of these:
+
+* Ambiguous, contradictory, or unprovable evidence in the repository: render the affected field or finding with the schema's `Unknown` / `Unknown: evidence unavailable` value and continue. An `Unknown` value anywhere in the output never demotes run status.
 * A dependency, service, or file that is out of scope or owned by another repository: record it as an out-of-scope finding that names the boundary and, where useful, notes that the owning repository should verify it. Do not issue instructions to that other repository beyond that suggestion.
 * Source content that cannot be safely rendered (for example a secret value): sanitize and keep the finding using only its safe location metadata. Never block for unsafe content.
-* No evidence found for an in-scope check: record the schema's negative value (`Not observed`, `None found`, or `Not Applicable`). Absence of evidence is a valid completed result.
+* No evidence found for an in-scope check: record the schema's negative value (`Not observed`, `None found`, or `Not Applicable`) and report `Complete` / `No Findings`. Absence of evidence is a valid completed result.
+* A search tool that is unavailable, a query that returns nothing usable, or read access denied for part of the scope: cover what is reachable, name the bound, and report `Complete` / `Bounded Partial`.
+* A dependency the operator has not authorized for deeper inspection: assess what the repository shows, name the limit, and report `Complete` / `Bounded Partial`.
 
-**The only `Blocked` condition is a broken pipeline.** Stop `Blocked` only when a required input produced by a prior pipeline step (a prerequisite artifact or frozen manifest) is genuinely absent, unreadable, or structurally invalid, meaning a prior step failed or the steps ran out of order. The orchestrator gates each step on the prior step returning `Complete`, so in a correctly orchestrated run this state cannot occur; when it does it is a pipeline defect, not a property of the repository. Stop with a single message of the form `prerequisite from a prior step is missing or invalid - rerun <the producing step>`, and never synthesize the missing input. Do not use `Blocked` as a graceful branch for repository content, and do not enumerate content-based block reasons.
+### The Only `Blocked` Condition Is a Broken Pipeline
+
+Stop `Blocked` only when a required input produced by a prior pipeline step (a prerequisite artifact or frozen manifest) is genuinely absent, unreadable, or structurally invalid, meaning a prior step failed or the steps ran out of order. The orchestrator gates each step on the prior step returning `Complete`, so in a correctly orchestrated run this state cannot occur; when it does it is a pipeline defect, not a property of the repository. Stop with a single message of the form `prerequisite from a prior step is missing or invalid - rerun <the producing step>`, and never synthesize the missing input. Do not use `Blocked` as a graceful branch for repository content, tool availability, evidence ambiguity, or authorization limits, and do not enumerate content-based block reasons.
+
+A prerequisite artifact that is present and readable satisfies this condition. Do not block on the artifact's own recorded status value.
 
 ## Platform-Managed Regional Failover
 

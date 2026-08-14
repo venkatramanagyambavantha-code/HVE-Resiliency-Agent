@@ -390,7 +390,7 @@ Phase 5 is complete when:
 * All six sections are present (Overview, Resilient-focused, Non-Resilient-focused, IaC Gap, Full Finding Matrix, Microsoft Standards Alignment).
 * A qualified engineer has reviewed and signed off on the full report before it is shared with the customer.
 
-A worked example is at [Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment.md](../Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment.md).
+A worked example is at [Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment_v2.md](../Microsoft-Assessment/EXAMPLE_MACAESA-Code-Level-Resiliency-Assessment_v2.md).
 
 ## Post-workflow: Backlog handoff
 

@@ -26,7 +26,7 @@ Read the frozen manifest, then read only the artifacts whose primary section is 
    * `### 2.1 Used Dependencies (Evidence Found)`: render each confirmed dependency using the Required Finding Schema with section-scoped IDs `F-2-00X`.
    * `### 2.2 Checked but Not Present`: a table with columns `Dependency | Reason Checked | Evidence Result`; include retained record IDs in `Evidence Result`.
    * `### 2.3 Not Applicable Dependency Categories`: a table with columns `Category | Reason Not Applicable`; include retained record IDs in `Reason Not Applicable`.
-5. Use only dependencies confirmed in Prompt 1a or 1b Section 1 for 2.1. Never combine zone and regional evidence in one finding.
+5. Use only dependencies confirmed in Prompt 1a or 1b Section 1 for 2.1. Never combine regional and non-regional evidence in one finding.
 
 ## Output
 

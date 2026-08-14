@@ -80,7 +80,7 @@ Phase 1 prompts ingest this manifest as their first input instead of discovering
 
 ## 3. Artifact-first prompt inputs (drop chat history, attach files)
 
-**Idea.** Each prompt's input should be **the prior phase's artifact file plus the current prompt body**, nothing else. The chat-history `/clear` rule in [Quick start](../README.md#purpose-of-clear-between-prompts) already enforces this for Mode A. Extend the same discipline to Mode B by making the orchestrator subagent re-read the artifact file on each handoff instead of carrying summarized state.
+**Idea.** Each prompt's input should be **the prior phase's artifact file plus the current prompt body**, nothing else. The chat-history `/clear` rule in [Quick start](../README.md#about-clear-between-prompts) already enforces this for Mode A. Extend the same discipline to Mode B by making the orchestrator subagent re-read the artifact file on each handoff instead of carrying summarized state.
 
 **Why it works.** The README notes Mode B is 30-50% more expensive because of context carry. Most of that is summarization of prior turns the next prompt does not actually need - the canonical state is on disk.
 

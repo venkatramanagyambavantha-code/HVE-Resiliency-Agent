@@ -1,5 +1,5 @@
 ---
-description: "Researches shared dependencies for bounded zone and regional failover risk evidence"
+description: "Researches shared dependencies for regional failover risk evidence"
 agent: "Task Researcher"
 argument-hint: "prompt1aArtifact=... prompt1bArtifact=..."
 ---
@@ -15,7 +15,7 @@ Use [Application Platform Context](../../instructions/hve-resiliency-platform-co
 
 ## Scope
 
-Assess only shared libraries, platform utilities, and centrally managed configuration used by this repository that affect a West US 2 zone failure or regional failover from West US 2 to West US. Dependency categories include shared libraries such as internal packages and shared build parents or plugins, platform utilities such as clients and runtime integrations, and centrally managed configuration such as shared configuration stores, templates, and pipelines.
+Assess only shared libraries, platform utilities, and centrally managed configuration used by this repository that affect a regional failover between West US 2 and West US. Dependency categories include shared libraries such as internal packages and shared build parents or plugins, platform utilities such as clients and runtime integrations, and centrally managed configuration such as shared configuration stores, templates, and pipelines.
 
 Use evidence only. Preserve file-and-line citations, ownership boundaries, existing mitigations, constraints, and P0-P3 classification from the platform context. Do not introduce another assessment area.
 
@@ -114,14 +114,15 @@ After bounded terminal work, select exactly one status using this precedence ord
 
 Include coverage metrics for prerequisite artifacts validated, production files manifested and traversed, source families completed, query families completed, candidates retained and classified, candidate overflow count and digest hash, unresolved candidates, corrective passes used, owner reads used, indirection depth reached, and subagent rounds used.
 
-Emit one complete finding for each distinct dependency, resiliency scenario, and failure-mode evidence chain. Put the scenario and failure mode inside `Zone or region failover risk implication`. Do not add an eighth field or another assessment area.
+Emit one complete finding for each distinct dependency, resiliency scenario, and failure-mode evidence chain. Put the scenario and failure mode inside `Region failover risk implication`. Do not add an eighth field or another assessment area.
 
 For every finding and evidence-gap record, repeat this exact seven-field schema with no missing or additional finding fields:
 
 * Dependency
 * Priority
-* Ownership boundary
-* Zone or region failover risk implication
+* Ownership boundary or entrypoint
+* Evidence-backed causal chain of repository facts and deterministic code-semantics inferences
+* Region failover risk implication
 * Evidence
 * Existing mitigations present, with evidence
 * Constraints or limitations, with evidence

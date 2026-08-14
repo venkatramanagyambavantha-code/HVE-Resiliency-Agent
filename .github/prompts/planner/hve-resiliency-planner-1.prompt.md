@@ -22,15 +22,8 @@ Include:
 - Open questions explicitly marked
 - Priority Legend (P0/P1/P2/P3) as a dedicated section near the top
 - Prioritized findings and remediation plan (every finding must have a priority)
-- Findings must be grouped and ordered: P0 first, then P1, then P2, then P3
 
 Do not introduce findings not present in the research.
-
-Use this Priority Legend:
-- P0 - Blocking/Critical Risk
-- P1 - High Priority
-- P2 - Improvement/Best Practice (Non-Blocking)
-- P3 - Non-Blocking Code Consistency (Best Practices / Maintainability)
 
 OUTPUT FORMAT for <repo-name>-Master.md (use this exact section order):
 1) Title: <repo-name> - Executive / Master Resiliency Report
@@ -52,7 +45,7 @@ OUTPUT FORMAT for <repo-name>-Master.md (use this exact section order):
 
 INCREMENTAL WRITE (avoid one oversized write that is prone to transient network failures):
 - First create <repo-name>-Master.md with sections 1-5 (Title, Overview Summary, Priority Legend, Application Summary, Architecture and Dependency Map) plus the Prioritized Findings heading and its table header row. This is one small write.
-- Then append the Prioritized Findings rows in priority order (P0, then P1, then P2, then P3), a few rows per edit, never regenerating the whole document in a single write.
+- Then append the Prioritized Findings rows in priority order, a few rows per edit, never regenerating the whole document in a single write.
 - Then append Open Questions and External Provider Considerations.
 - Treat the operation as resumable and idempotent: before appending a finding row, check whether its Finding ID already appears in the file; if it does, skip it. A re-dispatched run continues from a partial document without duplicating or reordering findings.
 - Preserve the exact section order and output format above; only the write is incremental.

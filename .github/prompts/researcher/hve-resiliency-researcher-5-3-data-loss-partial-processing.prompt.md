@@ -49,7 +49,7 @@ Exclude tests, fixtures, samples, generated output, documentation, and local-onl
 
 For every data-loss / partial-processing row, emit the Required Row Schema from the shared contract. Use section-scoped IDs of the form `F-5-data-loss-00X`, assigned in emission order starting at `F-5-data-loss-001`.
 
-Never combine zone-failure and regional-failover evidence in one row. If the same dependency plus failure type plus entrypoint applies to both scenarios with materially different behavior, emit two rows.
+Never combine regional-failover and partial-outage evidence in one row. If the same dependency plus failure type plus entrypoint applies to both scenarios with materially different behavior, emit two rows.
 
 ## Output
 
