@@ -8,6 +8,16 @@ Use [Application Task Planner Context](../../instructions/hve-resiliency-planner
 
 ---
 
+## Deployment Topology
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before reading the research artifact or writing any section. Carry `topology`, `primaryRegion`, `secondaryRegion`, and `targetDeployment` verbatim from the run context lock.
+
+Stamp the resolved deployment topology in `<repo-name>-Master.md` front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions and `{targetDeployment}` as an evaluation condition in the Overview Summary. Stamp the deployment topology only; never stamp a data write model in that field. Stamping is required and adds no section to the output format below.
+
+Do not hard-code region names anywhere in the report. Render regions from `{primaryRegion}` and `{secondaryRegion}`, or use the neutral terms "primary region" and "secondary region".
+
+---
+
 Run `/hve-resiliency-planner-0` first to lock in evidence constraints.
 
 ```text
@@ -36,7 +46,7 @@ OUTPUT FORMAT for <repo-name>-Master.md (use this exact section order):
    - Priority (P0/P1/P2/P3)
    - Title
    - What is true (summary of the research finding)
-   - Why it matters (impact during zone loss / West US 2 then West US failover)
+   - Why it matters (impact during zone loss / failover from the primary region to the secondary region under the resolved topology)
    - Evidence references (file+line citations or research reference IDs)
    - Recommended remediation summary (1-3 bullets; no code here)
    - Owner suggestion (team/component)

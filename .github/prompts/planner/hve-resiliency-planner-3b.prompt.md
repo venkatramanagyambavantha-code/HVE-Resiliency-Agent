@@ -9,6 +9,12 @@ argument-hint: "serviceName=..."
 
 * ${input:serviceName}: (Required) Service name matching the repo name.
 
+## Deployment Topology
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before reading any source artifact or appending any finding. Carry `topology`, `primaryRegion`, `secondaryRegion`, and `targetDeployment` verbatim from the run context lock.
+
+Every finding this prompt appends is written against the resolved topology, and the report's existing `topology` stamp must match it. If the report already carries a different stamp, stop `Blocked` with `artifact topology mismatch - Microsoft Assessment/{serviceName}-Code-Level-Resiliency-Assessment.md`. Never re-stamp, never default, and never infer topology from the Master Report or the Developer Guide.
+
 ## Source Artifacts
 
 Read **only** the following before generating. Keep context minimal.
@@ -21,16 +27,16 @@ Do **not** read the consolidated research, subagent files, or the Developer Guid
 
 ## Critical Context
 
-This report serves the Albertsons engagement. The customer is transitioning from a single-region deployment with a passive DR target to an active/active deployment across two regions. Use the classification rules from `hve-resiliency-planner-context.instructions.md` for all priority assignments.
+This report serves the Albertsons engagement. The customer is transitioning from a single-region deployment in the primary region to `{targetDeployment}`, the declared topology across the primary and secondary regions resolved from the run context lock. Use the classification rules from `hve-resiliency-planner-context.instructions.md` for all priority assignments, applying the P0 and P1 definitions for the resolved topology.
 
 All section headers, H3 group names, finding titles, and repo references must use `{serviceName}` (the repo name), not hardcoded service names.
 
 ## Region-Agnostic Language Rule
 
-The generated report must **never** reference "East US", "eastus", or any East region variant. Prefer region-agnostic terms:
+The generated report must **never** hard-code a region name. Render regions from `{primaryRegion}` and `{secondaryRegion}`, resolved from the run context lock, or use the topology-neutral terms:
 
-* **Primary region** — the current production region
-* **Secondary region** or **failover region** — the target active/active peer
+* **Primary region** — the region serving production traffic today
+* **Secondary region** or **failover region** — the peer region of the declared target topology
 * **Both regions** — when referring to symmetric requirements
 
 In code examples and fix blocks, use placeholder values like `{primaryRegion}`, `{secondaryRegion}`, or generic names rather than region-specific hostnames.
@@ -67,7 +73,7 @@ Every P0 and P1 finding uses this exact format (field order must be preserved):
 1. `#### PX-NNN: Short Title` — H4 heading
 2. `**Priority: PX — {Priority Label}**` — on its own line
 3. `**Resiliency Related:** Yes`
-4. `**Issue:**` — description of the problem. For P0/P1: explain how the issue is introduced or worsened by the transition from single-region to active/active.
+4. `**Issue:**` — description of the problem. For P0/P1: explain how the issue is introduced or worsened by the transition from a single-region deployment to the resolved topology.
 5. `**What does this solve:**` — one sentence, the outcome achieved
 6. `**Resiliency Impact:**` — 1–3 sentences framed in terms of zone failure or regional failover impact
 7. `**Recommended Fix:**` — concrete narrative action, specific enough for the customer's developers to implement independently
@@ -116,7 +122,7 @@ Append findings one at a time to avoid a single oversized write that is prone to
 * All code blocks have a language identifier.
 * Inline code for env vars, function names, file paths, and config keys.
 * All repo references use `{serviceName}`, never a hardcoded service name.
-* No references to "East US" or any East region variant.
+* No hard-coded region names; every region reference renders from `{primaryRegion}` or `{secondaryRegion}`.
 
 ## Output Location
 

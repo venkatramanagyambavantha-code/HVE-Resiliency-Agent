@@ -1,6 +1,6 @@
 ---
 description: "Creates the Code-Level Resiliency Assessment report header, Table of Contents, and Section 1 (Assessment Overview)"
-argument-hint: "serviceName=... [reportTitle=...] [targetDeployment=...]"
+argument-hint: "serviceName=... [reportTitle=...] [topology={active-active|active-standby}] [targetDeployment=...]"
 ---
 
 # Resiliency Report Generator — Part A: Header and Assessment Overview
@@ -9,7 +9,16 @@ argument-hint: "serviceName=... [reportTitle=...] [targetDeployment=...]"
 
 * ${input:serviceName}: (Required) Service name matching the repo name; used to locate artifacts and populate all headers, sections, and repo references throughout the report.
 * ${input:reportTitle}: (Optional) H1 title. Default: "Code-Level Resiliency Assessment".
-* ${input:targetDeployment}: (Optional) Target deployment model. Default: "Active/Active".
+* ${input:topology}: (Optional) Deployment topology override, exactly `active-active` or `active-standby`. When omitted, resolve from the run context lock per the Deployment Topology Contract. There is no default.
+* ${input:targetDeployment}: (Optional) Override for the rendered target deployment string. When omitted, use the `targetDeployment` field carried verbatim from the run context lock. There is no default, and it is never "Active/Active" unless the lock says so.
+
+## Deployment Topology
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before reading any source artifact or writing the file. Carry `topology`, `primaryRegion`, `secondaryRegion`, and `targetDeployment` verbatim from the run context lock; an explicit `${input:topology}` or `${input:targetDeployment}` overrides the corresponding lock value and nothing else.
+
+Stamp the resolved deployment topology in the report front matter as `topology: <active-active|active-standby>`, and in the Document Header as the `Target Deployment` value alongside the resolved regions. Stamp the deployment topology only; never stamp a data write model in that field. Prompts 3b, 3c, and 3d append to the file this prompt creates and inherit that stamp.
+
+Never default the topology, and never infer it from the Master Report or the consolidated research.
 
 ## Source Artifacts
 
@@ -20,19 +29,19 @@ Read **only** the following before generating. Do **not** read the Developer Gui
 
 ## Critical Context
 
-This report serves the Albertsons engagement. The customer is transitioning from a single-region deployment with a passive DR target to an active/active deployment across two regions. Every finding must be evaluated through this lens. Use the classification rules and decision tree defined in `hve-resiliency-planner-context.instructions.md`   for all priority assignments.
+This report serves the Albertsons engagement. The customer is transitioning from a single-region deployment in the primary region to `{targetDeployment}`, the declared topology across the primary and secondary regions resolved from the run context lock. Every finding must be evaluated through this lens. Use the classification rules and decision tree defined in `hve-resiliency-planner-context.instructions.md` for all priority assignments.
 
 All section headers, H3 group names, finding titles, and repo references must use `{serviceName}` (the repo name), not hardcoded service names like "Braintree" or "Fiserv".
 
 ## Region-Agnostic Language Rule
 
-The generated report must **never** reference "East US", "eastus", or any East region variant anywhere in the report. Prefer region-agnostic terms:
+The generated report must **never** hard-code a region name anywhere in the report. Render regions from `{primaryRegion}` and `{secondaryRegion}`, resolved from the run context lock, or use the topology-neutral terms:
 
-* **Primary region** — the current production region
-* **Secondary region** or **failover region** — the target active/active peer
+* **Primary region** — the region serving production traffic today
+* **Secondary region** or **failover region** — the peer region of the declared target topology
 * **Both regions** — when referring to symmetric requirements
 
-"West US" and "West US 2" may be used when necessary (e.g., describing the customer's actual topology), but prefer the generic terms above when the statement applies to any multi-region deployment.
+A resolved region name may appear only where the statement is specific to this run's deployment (e.g., describing the customer's actual topology), and even then it is rendered from `{primaryRegion}` or `{secondaryRegion}`, never typed as a literal. Prefer the generic terms above when the statement applies to any multi-region deployment.
 
 ## What to Generate
 
@@ -113,7 +122,7 @@ Use `# 1. Assessment Overview` as the heading. Include all of the following sub-
     | **Non-Resiliency** | **P3**    | N     | Security-only observations and configuration hygiene items                     |
     |                    | **Total** | **N** |                                                                                |
 
-    To split findings between Resiliency and Non-Resiliency sections: all P0 and P1 findings are Resiliency. P2 and P3 findings are classified using the litmus test — findings that pass the active/active litmus test (behavior changes in multi-region) are Resiliency; findings with identical behavior regardless of topology are Non-Resiliency.
+    To split findings between Resiliency and Non-Resiliency sections: all P0 and P1 findings are Resiliency. P2 and P3 findings are classified using the litmus test for the resolved topology — findings whose behavior changes under `{targetDeployment}` are Resiliency; findings with identical behavior regardless of topology are Non-Resiliency.
 
 5. **IMPORTANT callout**: End with this exact blockquote:
 

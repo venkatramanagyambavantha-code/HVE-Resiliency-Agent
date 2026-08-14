@@ -8,6 +8,16 @@ Use [Application Task Planner Context](../../instructions/hve-resiliency-planner
 
 ---
 
+## Deployment Topology
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before reading the research artifact or capturing any code. Carry `topology`, `primaryRegion`, `secondaryRegion`, and `targetDeployment` verbatim from the run context lock.
+
+Stamp the resolved deployment topology in `<repo-name>-Developer-Guide.md` front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions and `{targetDeployment}` as an evaluation condition in "How to Use This Guide". Stamp the deployment topology only; never stamp a data write model in that field. Stamping is required and adds no section to the output format below.
+
+Recommended patterns and code examples are written for the resolved topology: under `active-active` both regions serve traffic concurrently, under `active-standby` the secondary region is continuously ready and promoted within RTO. Do not hard-code region names in guidance or code; use `{primaryRegion}`, `{secondaryRegion}`, or the neutral terms.
+
+---
+
 Run `/hve-resiliency-planner-0` first to lock in evidence constraints.
 
 ```text
