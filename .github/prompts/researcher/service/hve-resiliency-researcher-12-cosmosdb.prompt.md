@@ -12,9 +12,9 @@ whether that instructions file is auto-applied.
 ## Inputs
 
 * `${input:prompt1aArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt 1a
-  Azure dependency inventory artifact under `.copilot-tracking/research/`.
+  Azure dependency inventory artifact under `<researchRoot>`.
 * `${input:prompt1bArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt 1b
-  external dependency inventory artifact under `.copilot-tracking/research/`.
+  external dependency inventory artifact under `<researchRoot>`.
 
 Use only these paths for prerequisite artifacts. Do not search, glob, select a recent file, or infer a
 prerequisite path.
@@ -27,9 +27,9 @@ repository evidence and report factual evidence gaps instead of assumptions.
 
 Assess only the current repository for these authoritative scenarios, one scenario per finding:
 
-* Full regional failover between West US 2 and West US
+* Full regional failover between {primaryRegion} and {secondaryRegion}
 
-Treat East US, active-active or multi-region writes, Last Write Wins, the RU model, Mongo API behavior,
+Treat any region name, multi-region writes, Last Write Wins, the RU model, Mongo API behavior,
 and no-data-loss expectations as claims to verify or as constraints or evidence gaps. Do not assume they
 describe the production architecture. Repository evidence cannot prove unavailable runtime replication,
 acknowledgement, conflict, recovery, or global load balancer behavior.
@@ -47,12 +47,63 @@ Keep the Cosmos DB scope closed to these eight assessment areas:
 
 Do not add assessment areas, ownership fields, recommendations, alternatives, examples, or code changes.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before the prerequisite gate,
+the manifest freeze, or any query family. The resolved topology scopes the eight assessment areas above.
+It adds no assessment area, ownership field, or section, and it never changes the seven-field finding
+schema in Output and handoff.
+
+The declared deployment topology never establishes that the account has multi-region writes, Last Write
+Wins, or any preferred-location set. Those remain claims to verify from repository evidence.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing areas:
+
+* Preferred-location lists that name one region as the sole write target while both regions serve writes
+* Client construction that pins a single write endpoint or hard-codes a regional host
+* Concurrent writes to the same document from both regions, and the conflict-resolution behavior that
+  governs them, including Last Write Wins only when evidenced
+* Session-token propagation when a read resolves in the region that did not take the write
+* Identifier, `_id`, shard-key, or sequence generation that must stay unique across both regions
+* Write idempotency and duplicate suppression under steady state, given both regions write concurrently
+* 429 throttling and retry behavior when both regions draw on the same provisioned throughput
+* Health-probe and global load balancer alignment that reports own-region health continuously
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing areas instead:
+
+* One-way replication lag from the write region to the secondary, and the documents at risk at cutover
+* Recovery-point exposure at cutover, and any stated no-data-loss acceptance boundary measured against it
+* Preferred-location and failover-priority ordering that must promote the secondary on demand
+* Deployment and configuration parity of the secondary client configuration, including drift that stays
+  unobservable while the secondary is idle
+* Cold client construction, connection warm-up, and first-write behavior on the secondary, which is the
+  promotion path
+* Mid-request behavior when the single write region becomes unavailable, and whether the driver reaches
+  the promoted region without a restart
+* Session state and read-your-writes behavior rebuilt at promotion rather than carried across it
+* Failback and reverse replication after the original write region returns
+
+Do not admit a candidate, emit a finding, or record an evidence gap for a dimension the resolved topology
+places out of scope. Under `active-active`, replication-at-cutover, secondary-parity, and cold client
+start dimensions are out of scope. Under `active-standby`, concurrent multi-region write conflict,
+cross-region identifier collision, and cross-region read-your-own-writes dimensions are out of scope. A
+suppressed dimension is never recorded as an evidence gap, an `Unknown: evidence unavailable
+(<evidence-gap-id>)` value, or a `Not observed in the checked manifest` entry.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and
+record the conflict per the contract's Mismatch Handling rules. Never switch topology, never redirect to
+another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary region" and
+"secondary region", in every finding. Do not hard-code region names in rendered output.
+
 ## Prerequisite gate
 
 Validate both input artifacts before repository discovery:
 
 1. Normalize each path and require a regular workspace-relative file under
-   `.copilot-tracking/research/`, without traversal, absolute paths, links, or repository escape.
+   `<researchRoot>`, without traversal, absolute paths, links, or repository escape.
 2. Parse YAML frontmatter and require non-empty string fields `repository`, `assessmentId`, `revision`,
    `status`, `generatedAt`, and `promptId`. Require the current repository name, the exact current commit
    SHA, `status: Complete`, RFC 3339 UTC ending in `Z`, and the matching `promptId` value `1a` or `1b`.
@@ -159,7 +210,7 @@ manifest. Bundle all listed terms for that family into its single invocation, ca
 result set, and never repeat a family or use a result to begin broad rediscovery.
 
 1. Cosmos binding: `cosmos`, `mongodb`, `mongo`, `ru`, client construction, connection keys, and endpoints
-2. Region and endpoint selection: preferred regions, West US 2, West US, East US, hosts, URIs, DNS, and fallback selection
+2. Region and endpoint selection: preferred regions, {primaryRegion}, {secondaryRegion}, any other region name, hosts, URIs, DNS, and fallback selection
 3. Retry and throttling: retry, timeout, backoff, transient errors, 429, throttling, and exception handling
 4. Session behavior: session tokens, consistency, causal consistency, read concern, write concern, and read-your-writes
 5. Write safety and conflicts: idempotency, duplicate suppression, conflict resolution, Last Write Wins, versioning, and acknowledgements
@@ -230,7 +281,7 @@ Classify each rendered finding with exactly one evidence-supported priority:
 * P3: Non-blocking maintainability, readability, duplication, or consistency behavior
 
 The risk field must connect cited behavior to one named authoritative scenario and failure effect. Never
-derive priority from an unverified no-data-loss, active-active, East US, or Last Write Wins premise.
+derive priority from an unverified no-data-loss, multi-region-write, named-region, or Last Write Wins premise.
 
 Use the exact field-safe value `Unknown: evidence unavailable (<evidence-gap-id>)` only in the impact,
 existing-mitigation, or constraint prose field when that field cannot be supported from repository
@@ -262,11 +313,26 @@ or incomplete source or query family requires a `bounded-partial` status unless 
 ## Output and handoff
 
 Write one sanitized artifact to
-`.copilot-tracking/research/<repository-name>-hve-resiliency-researcher-12-cosmosdb-research-output.md`,
+`<researchRoot>/<repository-name>-hve-resiliency-researcher-12-cosmosdb-research-output.md`,
 where `<repository-name>` is the sanitized current repository root directory name. Include the single
 terminal status, checked manifest roots and exclusions, completed query and read coverage, evidence gaps,
 hard-cap usage, compact candidate disposition and assertion-mapping counts, and zero-finding statement
 when applicable.
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation
+condition alongside the checked manifest roots. Stamp the resolved deployment topology only; never stamp
+a write model in that field. Stamping is required and adds no artifact section.
+
+Record one artifact-level labelled field `Data write model:` whose value is exactly one of
+`single-master`, `multi-master`, `mixed`, or `unknown`, followed by the sanitized file-line citations that
+support it. Use `unknown` when the frozen manifest and completed query families do not establish the write
+model; never derive it from the declared deployment topology, an Azure default, or product documentation.
+This field records the discovered write model of the datastore, not a deployment topology. It never
+establishes, adjusts, or overrides the declared deployment topology stamped on this artifact, and the
+declared topology never establishes it; where the two do not fit, record the conflict per Mismatch
+Handling. Downstream prompts consume this field as a cross-check. It is an artifact-level field, placed
+outside finding rows, and is not one of the seven finding fields below.
 
 Render each valid finding once with exactly these fields and in this order:
 

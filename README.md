@@ -53,9 +53,21 @@ The framework ships as a set of Copilot skills:
    The installer copies `.github/skills/`, `.github/prompts/`, and `.github/instructions/` into your `.github/` folder. Reload VS Code (**Developer: Reload Window**) so Copilot Chat re-indexes the new files, then commit the `.github/` additions so the rest of your team gets the same workflow.
 3. Reload VS Code so the new agents appear in the picker: **Developer: Reload Window**.
 
-### Run it (recommended: two clicks)
+### Run it (recommended: lock, then two clicks)
 
-The fastest path is the two **orchestrator agents**. Each runs its entire phase in one shot - no per-prompt commands, no manual `/clear`. You start by **selecting the agent in the picker**, then sending a plain message (not a slash command).
+Every run starts with the run context lock. After that, the fastest path is the two **orchestrator agents**. Each runs its entire phase in one shot - no per-prompt commands, no manual `/clear`. You start by **selecting the agent in the picker**, then sending a plain message (not a slash command).
+
+**Step 0: Run context lock (mandatory first step):**
+
+In Copilot Chat, run:
+
+```text
+/hve-resiliency-topology-0-lock topology=active-active
+```
+
+Use `topology=active-standby` when the secondary region is provisioned, deployed, and continuously ready but idle until promoted. There is no default and the topology is never inferred from the repository - it is a business decision you declare.
+
+The lock also fixes the regions and the research root for the run and writes them to `.copilot-tracking/<repo-name>-resiliency-run-context.md`. Regions default to `West US 2` primary and `West US` secondary; to override them, pass `primaryRegion` and `secondaryRegion` together (supplying exactly one is an error). The research root defaults to `.copilot-tracking/research-<topology>/`, so the same repository can be assessed under both topologies without artifacts colliding.
 
 **Research (Phases 1-3):**
 
@@ -63,10 +75,10 @@ The fastest path is the two **orchestrator agents**. Each runs its entire phase 
 2. Send exactly:
 
    ```text
-   Run the resiliency research pipeline for this repository.
+   Run the resiliency research pipeline for this repository with topology=active-active.
    ```
 
-   It runs discovery, then the analysis prompts in parallel, then consolidation, and points you to the consolidated research document under `.copilot-tracking/research/`. It only pauses for the Kafka topology question, a large-repo warning, or a verification failure.
+   `topology` is a required kickoff input. The orchestrator establishes (or re-confirms) the run context lock as its own Step 0, then runs discovery, the analysis prompts in parallel, and consolidation, and points you to the consolidated research document under the locked research root. It only pauses for a large-repo warning, a verification failure, or a blocked step. There is no Kafka question: the declared topology selects the Kafka prompt.
 
 **Planning (Phases 4-5):**
 
@@ -74,22 +86,24 @@ The fastest path is the two **orchestrator agents**. Each runs its entire phase 
 2. Send exactly:
 
    ```text
-   Run the resiliency planning pipeline from the consolidated research.
+   Run the resiliency planning pipeline from the consolidated research with topology=active-active.
    ```
 
-   It produces the executive Master report, the Developer Guide, and the final **Code-Level Resiliency Assessment** report under `Microsoft-Assessment/`.
+   `topology` is a required kickoff input here too. This orchestrator does not write the lock; it resolves the topology, regions, and research root from the lock the research run established. It produces the executive Master report, the Developer Guide, and the final **Code-Level Resiliency Assessment** report under `Microsoft-Assessment/`.
 
 > Tip: add `autonomy=checkpointed` to either kickoff message to pause for review at phase boundaries. Add `audit=on` to the planning message to also run the optional Phase 6 evidence audit (`/fix-assessment-finding`) per tier after the assessment is built.
 
 ### Manual alternative (one prompt at a time)
 
-Prefer to drive each step yourself? Run `/hve-resiliency-research` in Chat and follow the numbered steps in the skill: select a research agent for Phases 1-3 (Core Research, Service Research, Consolidation) and a planning agent for Phases 4-5 (Planning, Assessment). A context reset between prompts is optional - see below.
+Prefer to drive each step yourself? Run `/hve-resiliency-topology-0-lock topology=...` first, then `/hve-resiliency-research` in Chat and follow the numbered steps in the skill: select a research agent for Phases 1-3 (Core Research, Service Research, Consolidation) and a planning agent for Phases 4-5 (Planning, Assessment). A context reset between prompts is optional - see below.
 
 After a completed run, produce an executive ROI report with `/hve-resiliency-telemetry-report`. See the [Telemetry Report Workflow](docs/telemetry-report-workflow.md) cheatsheet for the fast path.
 
 ### About `/clear` between prompts
 
-A context reset (`/clear` or a new chat) is **optional, not required**. State is carried by the artifacts on disk under `.copilot-tracking/` (research docs, plans, the assessment), not by chat history - each prompt re-reads what it needs before it works. A reset just drops accumulated prior turns to lower cost and avoid context bloat, so it is recommended for cost in the manual path but never needed for correctness. The **orchestrator agents manage context automatically** by dispatching each step to a fresh subagent, so you do not run `/clear` at all when using them.
+A context reset (`/clear` or a new chat) is **optional, not required**. State is carried by the artifacts on disk under `.copilot-tracking/` (the run context lock, research docs, plans, the assessment), not by chat history - each prompt re-reads what it needs before it works. A reset just drops accumulated prior turns to lower cost and avoid context bloat, so it is recommended for cost in the manual path but never needed for correctness. The **orchestrator agents manage context automatically** by dispatching each step to a fresh subagent, so you do not run `/clear` at all when using them.
+
+The deployment topology and regions survive a reset for the same reason: they live in the run context lock on disk, not in the conversation. Every prompt re-resolves them from that lock before it does anything else, so they hold across `/clear`, a new chat, an agent switch, and parallel subagent dispatch. You declare the topology once in Step 0 and are never asked for it again. If the lock is missing, a prompt stops `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock` rather than guessing.
 
 See [.github/skills/hve-resiliency-research/SKILL.md](.github/skills/hve-resiliency-research/SKILL.md) for the authoritative workflow definition.
 
@@ -202,12 +216,15 @@ A qualified engineer must validate all findings before implementation.
 
 ## Customization and extensibility
 
-The framework is context-driven, not static. Its default behavior comes from two instruction files:
+The framework is context-driven, not static. Its default behavior comes from three instruction files:
 
 - [.github/instructions/hve-resiliency-platform-context.instructions.md](.github/instructions/hve-resiliency-platform-context.instructions.md)
 - [.github/instructions/hve-resiliency-planner-context.instructions.md](.github/instructions/hve-resiliency-planner-context.instructions.md)
+- [.github/instructions/hve-resiliency-topology.instructions.md](.github/instructions/hve-resiliency-topology.instructions.md)
 
-Edit these to match your engagement: target and failover architecture (active/passive vs active/active), what qualifies as a resiliency finding and which failure scenarios matter, the P0-P3 priority model, architectural assumptions, and output format. Re-run `/hve-resiliency-research` and the agents pick up the updated context automatically.
+Edit the first two to match your engagement: what qualifies as a resiliency finding and which failure scenarios matter, the P0-P3 priority model, architectural assumptions, and output format. Re-run `/hve-resiliency-research` and the agents pick up the updated context automatically.
+
+The third file is the **Deployment Topology Contract**. It defines how every prompt resolves the run's topology and regions, what `active-active` and `active-standby` each change about the assessment, how the resolved topology is stamped into every artifact, and what happens when repository evidence contradicts the declared topology. It is not where you set the topology for a run - that is the run context lock - but it is where you change what a topology means to the assessment. Treat it as a contract rather than a preference file: prompts are written against it, and `.github/scripts/lint-topology.sh` checks that they still comply.
 
 Treat the instruction files as part of the product and evolve them as the system changes. The quality of findings depends on how well the context reflects your architecture, the failure scenarios that matter, and your business goals.
 
@@ -215,7 +232,7 @@ Treat the instruction files as part of the product and evolve them as the system
 
 ## Workflow phases
 
-The framework follows an application-centric, evidence-first flow built on HVE Core's `Task Researcher` and `Task Planner` agents:
+The framework follows an application-centric, evidence-first flow built on HVE Core's `Task Researcher` and `Task Planner` agents. Every run opens with **Phase 0**, the run context lock, which fixes the deployment topology, the primary and secondary regions, and the research root for the whole run; no other prompt runs until it completes. From there:
 
 1. **Source code and IaC** in the target repository serve as primary evidence.
 2. **Task Researcher** runs Phase 1-2 prompts to produce per-area research artifacts (architecture, dependencies, failure paths, per-service findings), citing file and line for every claim.
@@ -226,8 +243,9 @@ The framework follows an application-centric, evidence-first flow built on HVE C
 
 | Phase               | Prompts                                                          | Notes                                       |
 | ------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
+| 0. Run Context Lock | `hve-resiliency-topology-0-lock`                                 | Mandatory first step. Fixes topology, regions, and research root. |
 | 1. Core Research    | `researcher-0` … `researcher-7-logging`                     | Sequential. Mode-aware.                     |
-| 2. Service Research | `researcher/service/*` (8-19, filtered to applicable services) | Mode B allows up to 3 concurrent subagents. |
+| 2. Service Research | `researcher/service/*` (8-19, filtered to applicable services) | Mode B allows up to 3 concurrent subagents. Kafka prompt selected by the locked topology. |
 | 3. Consolidation    | `consolidate-0-scaffold` … `consolidate-9-finalize` (split pipeline with verify passes) | User-gated,`/clear` between steps.        |
 | 4. Planning         | `planner-0`, `planner-1`, `planner-0`, `planner-2`       | User-gated,`/clear` between steps.        |
 | 5. Assessment       | `planner-3a` … `planner-3d`                                 | User-gated,`/clear` between steps.        |
@@ -241,6 +259,7 @@ A worked example output lives at [Microsoft-Assessment/EXAMPLE_MACAESA-Code-Leve
 | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [.github/skills/hve-resiliency-research/](.github/skills/hve-resiliency-research/)                         | Skill that orchestrates the full research workflow.                                                                                                                                  |
 | [.github/skills/hve-resiliency-telemetry-report/](.github/skills/hve-resiliency-telemetry-report/)         | Skill that turns a completed workflow run into an executive ROI and telemetry report, comparing the research, planning, and assessment phases against a manual baseline.             |
+| [.github/prompts/hve-resiliency-topology-0-lock.prompt.md](.github/prompts/hve-resiliency-topology-0-lock.prompt.md) | Phase 0 run context lock: records the declared deployment topology, the primary and secondary regions, and the research root for the run.                     |
 | [.github/prompts/researcher/](.github/prompts/researcher/)                                                 | Phase 1 (core) and Phase 2 (per-service) research prompts, plus the consolidation prompt.                                                                                            |
 | [.github/prompts/planner/](.github/prompts/planner/)                                                       | Phase 4 planning and Phase 5 assessment prompts (`planner-0` … `planner-3d`).                                                                                                        |
 | [.github/prompts/fix-assessment-finding.prompt.md](.github/prompts/fix-assessment-finding.prompt.md)       | Phase 6 optional evidence-audit prompt: verifies assessment citations and code against the repository, per priority tier.                                                            |
@@ -251,6 +270,8 @@ A worked example output lives at [Microsoft-Assessment/EXAMPLE_MACAESA-Code-Leve
 | [.github/skills/hve-resiliency-workitem-import/](.github/skills/hve-resiliency-workitem-import/)           | Skill that bulk-creates ADO work items from an export CSV via REST API, with optional parent Epic, priority-grouped User Stories, rich HTML descriptions, and assessment attachment. |
 | [.github/skills/hve-resiliency-workitem-jira-import/](.github/skills/hve-resiliency-workitem-jira-import/) | Skill that bulk-creates Jira Cloud issues from an export CSV via REST API v3, with optional parent Epic, priority-grouped Stories, ADF descriptions, and assessment attachment.      |
 | [.github/instructions/](.github/instructions/)                                                             | Platform context and evidence-only rules applied to researcher and planner prompts.                                                                                                  |
+| [.github/instructions/hve-resiliency-topology.instructions.md](.github/instructions/hve-resiliency-topology.instructions.md) | Deployment Topology Contract: topology resolution, vocabulary, per-topology assessment deltas, region resolution, artifact stamping, and mismatch handling.  |
+| [.github/scripts/lint-topology.sh](.github/scripts/lint-topology.sh)                                       | Static checks for the topology contract: no hardcoded regions or research paths, no inferred or operator-gated topology, and required clauses in every delta prompt.                 |
 | [docs/](docs/)                                                                                             | Workflow overview and reference documentation — see the[Documentation](#documentation) section above.                                                                                |
 | [Microsoft-Assessment/](Microsoft-Assessment/)                                                             | Worked example assessment output.                                                                                                                                                    |
 | [install.ps1](install.ps1) / [install.sh](install.sh)                                                       | One-line bootstrap installers that copy the skills, prompts, and instructions into another repository (no`git` required).                                                          |
@@ -297,3 +318,11 @@ HVE (Hypervelocity Engineering) is a Microsoft engineering practice and toolset.
 ## Contributing
 
 Prompts, instructions, agents, and skills in this repository follow the conventions in [microsoft/hve-core](https://github.com/microsoft/hve-core). When editing files under `.github/prompts/`, `.github/instructions/`, or `.github/skills/`, follow the prompt-builder and markdown instructions inherited from `hve-core`.
+
+Prompts must also stay compliant with the [Deployment Topology Contract](.github/instructions/hve-resiliency-topology.instructions.md). Run the linter from the repository root before opening a pull request:
+
+```bash
+bash .github/scripts/lint-topology.sh
+```
+
+It fails on hardcoded region literals or research paths outside the contract and the lock prompt, on any prompt that derives the deployment topology from repository evidence or asks the operator for it mid-run, on write models labelled as topology, and on delta prompts missing their contract link or mismatch-handling clause.

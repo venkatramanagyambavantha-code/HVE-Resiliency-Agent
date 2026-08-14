@@ -37,6 +37,32 @@ Startup-failure discovery hints (evidence-only):
 
 Never emit a row solely because startup-related retry or fallback is absent; require positive repository evidence that a boot-time failure of the dependency produces the observed startup failure.
 
+## Topology Deltas
+
+Read the resolved deployment topology from the frozen manifest, exactly as this stage reads `eligibleDependencies`. Do not re-resolve it, do not infer it from repository contents, and do not override it. If the manifest records no topology, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`. The [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) governs. The resolved topology scopes the startup-failure discovery hints above. It adds no assessment topic, output field, or section, and it never changes the Required Row Schema.
+
+Startup failure is the most topology-sensitive outcome in this pipeline: under `active-standby` the startup path is the promotion path, so a boot-time failure on the secondary surfaces only when it is needed.
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing hints, at high severity:
+
+* Cold start, warm-up, and scale-from-zero on the secondary, where the boot path is first exercised under full load at promotion.
+* Configuration, secret, and credential resolution at boot on the secondary, including values that resolve only against `{primaryRegion}` endpoints or that carry no `{secondaryRegion}` equivalent.
+* Deployment and configuration parity of the secondary boot path, including drift that stays unobservable while the secondary is idle.
+* Readiness and startup probes that report healthy on an idle secondary without proving it can boot into serving traffic.
+* Capacity provisioned for the secondary at boot, distinct from capacity that is only defined.
+* Scheduled work, singletons, and leader-elected paths that must not start on the standby, and must start on promotion.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing hints instead:
+
+* Boot-time dependency resolution that must succeed against region-local endpoints in either region, since the same startup path runs in both.
+* Rolling restart or redeploy of one region while the partner serves live traffic, where a failed boot removes that region's capacity.
+* Startup registration of a scheduler, singleton, or leader-elected path that would then run in both regions at once.
+* Boot-time capacity and pool sizing that must let a booting region absorb full load on partner loss.
+
+Do not emit a row and do not record an evidence gap for a dimension the resolved topology places out of scope. Under `active-active`, cold start, warm-up, scale-from-zero, secondary deployment and configuration parity, and promotion-time boot are not applicable, because the process is already warm and the boot path is continuously exercised by live traffic; they must not be recorded as evidence gaps. Under `active-standby`, concurrent multi-region startup registration, cross-region identifier collision at boot, and read-your-own-writes at boot are out of scope and must not be recorded as evidence gaps.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules. Never switch topology and never decline to run.
+
 ## Bounded Discovery
 
 Apply the bounded-discovery limits in the shared contract per eligible dependency and per this outcome only. Counters do not carry over from another outcome fill and cannot be reset by aliases, environments, or wording.
@@ -51,7 +77,7 @@ Never combine regional-failover and partial-outage evidence in one row. If the s
 
 ## Output
 
-Write the fragment to `<fragmentDir>/startup-failure.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.1 Startup Failure` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-1-startup-failure`, `outcome-key: startup-failure`, and the fragment's terminal status (`Blocked`, `Incomplete`, or `Complete`). Do not modify the skeleton artifact. Do not touch any other fragment.
+Write the fragment to `<fragmentDir>/startup-failure.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.1 Startup Failure` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-1-startup-failure`, `outcome-key: startup-failure`, and the fragment's terminal status (`Blocked`, `Incomplete`, or `Complete`). Stamp the resolved deployment topology in the same frontmatter as `topology: <active-active|active-standby>`, carried verbatim from the manifest, and state it with the resolved regions as an evaluation condition. Stamping is required and adds no field to the Required Row Schema. Do not modify the skeleton artifact. Do not touch any other fragment.
 
 ## Completion
 

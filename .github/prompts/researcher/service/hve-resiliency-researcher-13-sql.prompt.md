@@ -36,6 +36,84 @@ Assess these existing areas without adding assessment areas:
 * State handling through stateless pods, externalized sessions, and queues
 * Health-probe alignment between the global load balancer and backend services
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md)
+before any repository traversal or discovery action. The resolved
+topology scopes the existing assessment areas above. It adds no
+assessment area or section, and it changes the output schema only
+through the `Data write model:` summary field defined in the Evidence
+and Output Contract.
+
+Azure SQL accepts writes in one replica at a time. A declared
+`active-active` deployment topology does not make the database
+multi-writer, and an observed single-writer constraint does not make the
+deployment topology `active-standby`.
+
+When the resolved topology is `active-active`, treat these as in scope
+within the existing areas:
+
+* Writes issued from both regions against the single writer, and the
+  added latency, timeout, and retry exposure of the region that does not
+  host it
+* Connections that bypass the failover group read-write listener and
+  target a direct server FQDN, pinning one region while both regions
+  serve traffic
+* Read paths that resolve to the read-only listener, and
+  read-your-own-writes exposure when a read follows a write taken from
+  the other region
+* Identifier, sequence, and key allocation performed in the application
+  rather than the database, where uniqueness must hold across both
+  regions
+* Transaction idempotency and duplicate-write prevention under steady
+  state, given both regions submit concurrently
+* Externalized session, queue, and stateless-pod state that a request
+  may reach from either region
+* Health-probe alignment that reports own-region backend health
+  continuously
+
+When the resolved topology is `active-standby`, treat these as in scope
+within the existing areas instead:
+
+* Recovery point exposure at cutover under asynchronous geo-replication,
+  and the committed transactions at risk when the failover group
+  promotes
+* Write blocking, fencing, and maintenance-mode behavior that prevents
+  split-brain writes across the promotion window
+* Connections that bypass the failover group read-write listener and
+  target a direct server FQDN, which do not follow the listener at
+  promotion
+* Connection-pool behavior across the SQL role change, including stale
+  pooled connections and reconnection without a restart
+* Client retry, timeout, and circuit-breaker behavior bounded to the
+  promotion window rather than to steady state
+* Transaction idempotency and duplicate-write prevention at cutover
+  only, over that bounded window
+* Deployment and configuration parity of the secondary, including drift
+  that stays unobservable while the secondary is idle
+* Explicit failback and reverse-replication path after the original
+  primary returns
+
+Do not emit a finding or record an evidence gap for a dimension the
+resolved topology places out of scope. Under `active-active`,
+recovery-point-at-cutover, write-fencing-at-promotion, and
+secondary-parity dimensions are out of scope. Under `active-standby`,
+concurrent multi-region write conflict, cross-region identifier
+collision, and cross-region read-your-own-writes dimensions are out of
+scope. A suppressed dimension is never recorded as an evidence gap, an
+`Unknown` value, or an `Unknown: two-round prompt budget exhausted`
+value.
+
+Where observed evidence does not fit the declared topology, continue
+under the declared topology and record the conflict per the contract's
+Mismatch Handling rules. Never switch topology, never redirect to
+another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or
+the terms "primary region" and "secondary region", in every row. Do not
+hard-code region names in rendered output.
+
 ## Bounded Evidence Protocol
 
 Apply this protocol only to dependencies confirmed by the inherited service
@@ -114,6 +192,25 @@ narration. Provide none of them.
 The authoritative artifact must contain exactly three section classes: a
 concise scope summary, a terminal-outcome summary, and canonical finding rows.
 Do not emit another section.
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved
+regions as an evaluation condition in the scope summary. Stamp the resolved
+deployment topology only; never stamp a write model in that field. Stamping is
+required and adds no section class.
+
+The terminal-outcome summary carries one labelled field `Data write model:`
+whose value is exactly one of `single-master`, `multi-master`, `mixed`, or
+`unknown`, followed by the file-and-line citations that support it. Use
+`unknown` when bounded repository evidence is exhausted without establishing
+it; never derive it from the declared deployment topology, an Azure default, or
+product documentation. This field records the discovered write model of the
+datastore, not a deployment topology. It never establishes, adjusts, or
+overrides the declared deployment topology stamped on this artifact, and the
+declared topology never establishes it; where the two do not fit, record the
+conflict per the Topology Deltas mismatch rule. Downstream prompts consume this
+field as a cross-check. It is a summary field and is never added to a canonical
+finding row.
 
 Repeat this canonical row for each finding:
 

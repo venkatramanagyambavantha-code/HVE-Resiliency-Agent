@@ -9,6 +9,12 @@ argument-hint: "serviceName=..."
 
 * ${input:serviceName}: (Required) Service name matching the repo name.
 
+## Deployment Topology
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before reading any source artifact or appending any section. Carry `topology`, `primaryRegion`, `secondaryRegion`, and `targetDeployment` verbatim from the run context lock.
+
+Sections 4, 5, and 6 are built against the resolved topology, and the report's existing `topology` stamp must match it. If the report already carries a different stamp, stop `Blocked` with `artifact topology mismatch - Microsoft Assessment/{serviceName}-Code-Level-Resiliency-Assessment.md`. Never re-stamp, never default, and never infer topology from the report body or the Master Report.
+
 ## Source Artifacts
 
 Read **only** the following before generating. Keep context minimal.
@@ -29,7 +35,7 @@ All section headers, finding titles, and repo references must use `{serviceName}
 
 ## Region-Agnostic Language Rule
 
-The generated report must **never** reference "East US", "eastus", or any East region variant. Prefer region-agnostic terms.
+The generated report must **never** hard-code a region name. Render regions from `{primaryRegion}` and `{secondaryRegion}`, resolved from the run context lock, or use the topology-neutral terms "primary region" and "secondary region".
 
 ## What to Generate
 
@@ -101,7 +107,7 @@ Include patterns relevant to the findings discovered in this assessment. Common 
 * [Circuit Breaker Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker) — relates to circuit breaker findings
 * [Queue-Based Load Leveling](https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling) — relates to failure queue findings
 * [Deployment Stamps](https://learn.microsoft.com/en-us/azure/architecture/patterns/deployment-stamp) — relates to multi-region deployment findings
-* [Geode Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/geodes) — relates to active/active deployment
+* [Geode Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/geodes) — relates to serving traffic from multiple regions concurrently; applies only when the resolved topology is `active-active`
 * [Throttling Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/throttling) — relates to rate limiting findings
 * [Competing Consumers](https://learn.microsoft.com/en-us/azure/architecture/patterns/competing-consumers) — relates to scheduler leader election findings
 * [Bulkhead Pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/bulkhead) — relates to thread pool isolation findings
@@ -134,7 +140,8 @@ Before finalizing, confirm the **entire report** across all sections:
 * P3 findings use the full finding template format (same as P0–P2).
 * All Back to Top links use `#top`.
 * No hardcoded service names appear in H2, H3, or Repo(s) columns.
-* No references to "East US" or any East region variant appear anywhere in the report.
+* No hard-coded region name appears anywhere in the report; every region reference renders from `{primaryRegion}` or `{secondaryRegion}`.
+* The report front matter and the `Target Deployment` header carry the resolved topology and `{targetDeployment}` from the run context lock.
 * IaC Gap Analysis has both "Available to Review" and "Not Available" tables.
 
 If validation finds discrepancies (e.g., Section 1 counts do not match actual finding counts), fix them in place.
@@ -145,7 +152,7 @@ If validation finds discrepancies (e.g., Section 1 counts do not match actual fi
 * Blank lines before and after tables, code blocks, headings, and lists.
 * `---` horizontal rules between major sections.
 * All repo references use `{serviceName}`, never a hardcoded service name.
-* No references to "East US" or any East region variant.
+* No hard-coded region names; every region reference renders from `{primaryRegion}` or `{secondaryRegion}`.
 
 ## Output Location
 

@@ -10,7 +10,7 @@ keywords:
   - hve
   - operator
   - azure
-estimated_reading_time: 12
+estimated_reading_time: 14
 ---
 
 ## Purpose
@@ -25,7 +25,7 @@ For conceptual background (what each phase produces and why), read [Resiliency R
 * [HVE context](#hve-context)
 * [Prerequisites](#prerequisites)
 * [Pre-flight checklist](#pre-flight-checklist)
-* [Phase 0: Install and verify](#phase-0-install-and-verify)
+* [Phase 0: Install, verify, and lock the run context](#phase-0-install-verify-and-lock-the-run-context)
 * [Phase 1: Core research (Prompts 0-7)](#phase-1-core-research-prompts-0-7)
 * [Phase 2: Service-specific research (Prompts 8-19)](#phase-2-service-specific-research-prompts-8-19)
 * [Phase 3: Consolidation](#phase-3-consolidation)
@@ -81,15 +81,15 @@ Optional for the post-workflow backlog handoff:
 
 Complete these in order. Do not start Phase 0 until every item is checked.
 
-1. Confirm the engagement scope is written down: target repo, in-scope services, primary and secondary Azure regions, and the failover model (active/active vs active/passive).
-2. Review and, if needed, customize `.github/instructions/hve-resiliency-platform-context.instructions.md` and `.github/instructions/hve-resiliency-planner-context.instructions.md` to match the engagement scope.
+1. Confirm the engagement scope is written down: target repo, in-scope services, the primary and secondary Azure regions, and the deployment topology (`active-active` or `active-standby`). The topology is a business decision the customer supplies; the framework never infers it from the repository, so you must have the answer before Phase 0.
+2. Review and, if needed, customize `.github/instructions/hve-resiliency-platform-context.instructions.md` and `.github/instructions/hve-resiliency-planner-context.instructions.md` to match the engagement scope. Read `.github/instructions/hve-resiliency-topology.instructions.md` as well: it defines what each topology changes about the assessment, and it is the contract every prompt is written against.
 3. Capture a baseline token budget. Use the [Token consumption estimates](../README.md#token-consumption-estimates) table to forecast Mode A vs Mode B cost for the target repo size.
 4. Decide the execution mode you will request when the skill asks (see [Operator decision matrix](#operator-decision-matrix-mode-a-vs-mode-b)).
 5. Open the target repository as the active VS Code workspace folder. The skill operates only on the open workspace.
 
-## Phase 0: Install and verify
+## Phase 0: Install, verify, and lock the run context
 
-Install the framework into the target repository and verify that Copilot Chat picks it up.
+Install the framework into the target repository, verify that Copilot Chat picks it up, then establish the run context lock. No research or planning prompt may run before the lock exists.
 
 ### 0.1 Install the framework
 
@@ -125,13 +125,24 @@ Get-ChildItem .github\skills, .github\prompts, .github\instructions -Recurse -Fi
 You should see a non-zero count, and the following should exist:
 
 * `.github/skills/hve-resiliency-research/SKILL.md`
+* `.github/prompts/hve-resiliency-topology-0-lock.prompt.md`
 * `.github/prompts/researcher/` (at minimum prompts 0 through 7-logging)
 * `.github/instructions/hve-resiliency-platform-context.instructions.md`
+* `.github/instructions/hve-resiliency-topology.instructions.md`
+
+If you have customized any prompt or instruction file, validate the topology contract before running the workflow:
+
+```bash
+bash .github/scripts/lint-topology.sh
+```
+
+It reports `RESULT: PASS` when the prompts still comply: no hardcoded region literals or research paths outside the contract and the lock prompt, no prompt deriving the deployment topology from repository evidence or asking the operator for it mid-run, and the required mismatch-handling clauses present in every delta prompt. Fix any `FAIL` line before starting Phase 1.
 
 ### 0.3 Reload VS Code and confirm slash commands
 
 In VS Code, run **Developer: Reload Window** from the command palette. Then in Copilot Chat, type `/` and confirm these commands appear in the picker:
 
+* `/hve-resiliency-topology-0-lock`
 * `/hve-resiliency-research`
 * `/hve-resiliency-workitem-export`
 * `/hve-resiliency-workitem-import`
@@ -148,13 +159,44 @@ git add .github/skills .github/prompts .github/instructions
 git commit -m "chore: install HVE Resiliency framework"
 ```
 
+### 0.5 Establish the run context lock
+
+This is the mandatory first step of the workflow itself. It fixes the deployment topology, the regions, and the research root for the entire run. Send:
+
+```text
+/hve-resiliency-topology-0-lock topology=active-active
+```
+
+Use `topology=active-standby` when the primary region serves all production traffic and the secondary is provisioned, deployed, and continuously ready but idle until promoted. Exactly one of the two values is required; there is no default, and the framework never infers the topology from the repository. Active-standby is not passive disaster recovery: the standby is expected to hold deployment and configuration parity, carry real capacity, be continuously health-probed, and accept traffic within RTO, and the absence of any of those is a finding.
+
+Optional arguments:
+
+| Argument | Behavior |
+|----------|----------|
+| `primaryRegion` and `secondaryRegion` | Override the defaults, which are `West US 2` primary and `West US` secondary. The two are paired: supply both or neither. Supplying exactly one is an error, so a chosen region is never silently paired with a default. The two must resolve to different regions. |
+| `researchRoot` | Workspace-relative research root for this run. Defaults to `.copilot-tracking/research-<topology>/`, which keeps a run under one topology from colliding with a run under the other on the same repo. |
+| `confirmOverwrite=true` | Required to replace an existing lock whose values differ. See [Recovery and re-runs](#recovery-and-re-runs). |
+
+The prompt writes `.copilot-tracking/<repo-name>-resiliency-run-context.md`, reads it back, and echoes every resolved field. Verify the echo before continuing:
+
+* The lock path, and whether it was `written`, `unchanged`, or `replaced`.
+* The topology, primary region, secondary region, research root, and target deployment.
+* Whether the regions were operator-supplied or defaulted. Do not mistake a defaulted pair for a chosen one; if the engagement targets different regions, re-run with both region arguments.
+* Note the research root. Every later phase writes there, and this runbook refers to it as `<researchRoot>`.
+
+The prompt transcribes what you supply and nothing else. It does not read source, configuration, or infrastructure, and it does not investigate the repository.
+
+From here on, every prompt re-resolves the topology and regions from this file rather than from the conversation, so they survive `/clear`, a new chat, an agent switch, and parallel subagent dispatch. You are not asked for the topology again. A prompt that cannot find the lock stops `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`.
+
 ## Phase 1: Core research (Prompts 0-7)
 
-Phase 1 establishes the repository context and dependency inventory that all later phases depend on. It runs prompts `0` through `7-logging` strictly in order.
+Phase 1 establishes the repository context and dependency inventory that all later phases depend on. It runs prompts `0` through `7-logging` strictly in order, after the run context lock from step 0.5.
 
 ### 1.1 Select the agent
 
-The recommended path is to select **Resiliency Research Orchestrator** from the agent picker: it runs Phases 1-3 in one invocation, parallelizes independent steps, and manages context automatically (no manual `/clear`). For the manual, one-prompt-per-turn path below, select a research agent (`Task Researcher` in HVE Core v3.2.2, or the current research phase agent in your HVE version); every Phase 1 prompt expects a research agent.
+The recommended path is to select **Resiliency Research Orchestrator** from the agent picker: it runs Phases 1-3 in one invocation, parallelizes independent steps, and manages context automatically (no manual `/clear`). It takes `topology` as a required kickoff input, for example `Run the resiliency research pipeline for this repository with topology=active-active.` The orchestrator runs the lock itself as its Step 0 before anything else, so a lock you already wrote in step 0.5 with the same values is reported `unchanged`. Without a topology it stops `Blocked` rather than choosing one.
+
+For the manual, one-prompt-per-turn path below, select a research agent (`Task Researcher` in HVE Core v3.2.2, or the current research phase agent in your HVE version); every Phase 1 prompt expects a research agent.
 
 ### 1.2 Invoke the skill
 
@@ -164,7 +206,7 @@ Send this exactly:
 /hve-resiliency-research
 ```
 
-The skill will ask one and only one question: which execution mode to use.
+The skill will ask one and only one question: which execution mode to use. It does not ask for the topology or the regions; those come from the lock written in step 0.5. If the lock is missing, the run stops `Blocked` - go back and write it rather than answering the topology in chat.
 
 ### 1.3 Choose the mode
 
@@ -179,7 +221,7 @@ See [Operator decision matrix](#operator-decision-matrix-mode-a-vs-mode-b) if yo
 
 Repeat this loop for prompts 0, 1a, 1b, 2, 3, 4, 5, 6, 7-logging (in that order):
 
-1. Wait for the prompt artifact to be written under `.copilot-tracking/research/`.
+1. Wait for the prompt artifact to be written under `<researchRoot>`.
 2. Open the artifact and skim it. Confirm it cites file and line references for substantive claims.
 3. If the artifact is wrong or empty, retry the same prompt by re-invoking the skill before moving on.
 4. When the agent stops with a next-step recommendation, optionally run `/clear` to reset context (recommended for cost).
@@ -199,7 +241,7 @@ In Mode B the orchestrator runs all eight prompts back-to-back. Your job is to:
 
 Phase 1 is complete when:
 
-* All eight artifacts exist under `.copilot-tracking/research/` with the repo name as the file prefix.
+* All eight artifacts exist under `<researchRoot>` with the repo name as the file prefix.
 * The agent has presented the Phase 1 completion summary and stopped.
 * You have reviewed the Phase 2 readiness summary and know which service prompts will run.
 
@@ -223,11 +265,13 @@ Before proceeding, list the prompts the orchestrator plans to run. Cross-check e
 | `/hve-resiliency-researcher-13-sql` | Azure SQL |
 | `/hve-resiliency-researcher-14-redis` | Azure Cache for Redis |
 | `/hve-resiliency-researcher-15-storage` | Azure Storage |
-| `/hve-resiliency-researcher-16-kafka-active-active` | Kafka (Active-Active, paired with a multi-master database) |
-| `/hve-resiliency-researcher-16-kafka-active-standby-confluent` | Kafka (Active-Standby via Confluent Cluster Linking, paired with a single-master database) |
+| `/hve-resiliency-researcher-16-kafka-active-active` | Kafka on Confluent Cloud, selected when the locked topology is `active-active` |
+| `/hve-resiliency-researcher-16-kafka-active-standby-confluent` | Kafka on Confluent Cloud via Cluster Linking, selected when the locked topology is `active-standby` |
 | `/hve-resiliency-researcher-17-networking` | Networking |
 | `/hve-resiliency-researcher-18-entraid` | Entra ID |
 | `/hve-resiliency-researcher-19-apim` | API Management |
+
+Only one Kafka prompt runs, and the topology locked in step 0.5 decides which. You are not asked to choose, and neither the database inventory nor the Kafka provider is a question: Kafka is treated as running on Confluent Cloud under both topologies. The data write model of the confirmed databases (multi-master, single-master, or mixed) is a cross-check instead. The Kafka step records whether the observed write model fits the declared topology and raises a finding when it does not - a single-master store under `active-active` is a P0, an unused multi-master capability under `active-standby` is a P2 - but it never changes the prompt that runs and never pauses the run.
 
 ### 2.2 Trigger Phase 2
 
@@ -245,7 +289,7 @@ The orchestrator dispatches subagents (up to three concurrent for independent se
 
 Phase 2 is complete when:
 
-* One artifact exists per applicable service under `.copilot-tracking/research/`.
+* One artifact exists per applicable service under `<researchRoot>`.
 * The completion summary lists every artifact produced and every service skipped (with reason).
 * The agent has stopped and recommended `/clear`, then `/hve-resiliency-researcher-consolidate-0`.
 
@@ -277,7 +321,7 @@ Phase 3 merges every Phase 1 and Phase 2 artifact into one consolidated evidence
 
 ### 3.3 Verify the output
 
-Confirm a consolidated document exists under `.copilot-tracking/research/` with the repo name as the file prefix (alongside the `-findings-manifest.md` coordination file Part A wrote). Open it and verify:
+Confirm a consolidated document exists under `<researchRoot>` with the repo name as the file prefix (alongside the `-findings-manifest.md` coordination file Part A wrote). Open it and verify:
 
 * Every retained finding still cites the upstream artifact and the original file and line evidence.
 * Terminology is consistent (for example, the same service name is used across all sections).
@@ -288,7 +332,7 @@ If a pass is incomplete or inconsistent, re-run that pass (after `/clear`) with 
 
 ## Phase 4: Planning
 
-Phase 4 converts the consolidated evidence into a Master report and a Developer Guide. Switch the active agent to **Task Planner** before starting.
+Phase 4 converts the consolidated evidence into a Master report and a Developer Guide. The recommended path is to select **Resiliency Planning Orchestrator** and run it with the same required `topology` input you used for research, for example `Run the resiliency planning pipeline from the consolidated research with topology=active-active.` That orchestrator does not write the lock; it resolves the topology, regions, and research root from the lock already on disk, and stops `Blocked` if none is there. For the manual path below, switch the active agent to **Task Planner** before starting.
 
 ### 4.1 Run the planning context frame
 
@@ -421,7 +465,7 @@ If unsure, default to Mode A.
 
 ### Re-run a single research prompt
 
-The framework is file-driven: each prompt writes a discrete artifact under `.copilot-tracking/research/`. To re-run one prompt:
+The framework is file-driven: each prompt writes a discrete artifact under `<researchRoot>`. To re-run one prompt:
 
 1. Delete (or rename) the stale artifact for that prompt.
 2. `/clear`.
@@ -429,14 +473,24 @@ The framework is file-driven: each prompt writes a discrete artifact under `.cop
 
 ### Restart Phase 1 cleanly
 
-If you need to start over with no prior context:
+If you need to start over with no prior context, clear the research root recorded in the lock and the plans folder. Substitute the research root from the step 0.5 echo:
 
 ```powershell
-Remove-Item .copilot-tracking\research\* -Force
+Remove-Item <researchRoot>\* -Force
 Remove-Item .copilot-tracking\plans\* -Force -ErrorAction SilentlyContinue
 ```
 
-Then `/clear` and re-invoke `/hve-resiliency-research`.
+Leave the run context lock in place. It is not a research artifact, and deleting it means the next prompt stops `Blocked`. Then `/clear` and re-invoke `/hve-resiliency-research`.
+
+### Change the topology or regions mid-engagement
+
+Re-run the lock prompt with the new values and `confirmOverwrite=true`:
+
+```text
+/hve-resiliency-topology-0-lock topology=active-standby confirmOverwrite=true
+```
+
+Without `confirmOverwrite=true` the prompt refuses to replace a lock whose values differ, and reports both the existing and requested values. This is deliberate: changing the topology or the regions invalidates every artifact already produced for the run. After replacing the lock, regenerate the artifacts rather than mixing them - a research artifact stamped with the old topology is recorded as `topology: mismatched` by later research prompts, and consolidation refuses it outright with `artifact topology mismatch - <path>`. Assessing the same repo under both topologies is better handled by the default per-topology research roots, which keep the two runs' artifacts apart.
 
 ### Recover from a Phase 4 or Phase 5 error
 
@@ -468,6 +522,18 @@ Checks:
 2. Confirm the workspace folder open in VS Code is the repo root, not a subfolder.
 3. Run **Developer: Reload Window** in VS Code.
 4. Confirm GitHub Copilot Chat is signed in and enabled for this workspace.
+
+### Run stops with "topology not established"
+
+Symptom: a prompt or orchestrator stops `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`.
+
+Fix: the run context lock is missing. Run step 0.5. Do not answer the topology in chat instead - prompts resolve it from the lock on disk, never from conversation history, so a chat answer does not carry to the next prompt or to a dispatched subagent.
+
+### Run stops with "multiple run context locks found"
+
+Symptom: a prompt stops `Blocked` with `multiple run context locks found - supply topology explicitly`.
+
+Fix: more than one `*-resiliency-run-context.md` resolved under `.copilot-tracking/`, usually left over from an earlier run. Delete the stale lock, or pass `topology` explicitly on the prompt so it takes precedence over auto-location. An explicitly supplied topology always overrides the lock.
 
 ### Skill activates but ignores mode question
 
@@ -509,6 +575,8 @@ Fix: switch to Mode A for the remaining prompts (Mode A is 30-50% cheaper than M
 
 Before declaring the engagement complete, confirm every item below.
 
+* [ ] The run context lock exists at `.copilot-tracking/<repo-name>-resiliency-run-context.md` and its topology and regions match the engagement scope agreed in the pre-flight checklist.
+* [ ] Every artifact carries the same topology stamp as the lock, in both its front matter and its scope or assumptions section.
 * [ ] All eight Phase 1 artifacts exist and have been spot-checked by a qualified engineer.
 * [ ] Every applicable Phase 2 service artifact exists, and skipped services are documented with a reason.
 * [ ] The consolidated research document deduplicates findings and preserves file and line evidence.
@@ -526,6 +594,9 @@ Before declaring the engagement complete, confirm every item below.
 * [Work Item Skills Guide](workitem-skills-guide.md) - end-to-end backlog import for ADO and Jira.
 * [HVE Resiliency README](../README.md) - overview, customization, and token estimates.
 * [`hve-resiliency-research` skill](../.github/skills/hve-resiliency-research/SKILL.md) - authoritative skill definition.
+* [Deployment Topology Contract](../.github/instructions/hve-resiliency-topology.instructions.md) - topology resolution, vocabulary, per-topology assessment deltas, region resolution, artifact stamping, and mismatch handling.
+* [Run context lock prompt](../.github/prompts/hve-resiliency-topology-0-lock.prompt.md) - inputs, validation, region defaults, and idempotency rules for Phase 0.
+* [`lint-topology.sh`](../.github/scripts/lint-topology.sh) - static checks that prompts still comply with the topology contract.
 * [Platform context instructions](../.github/instructions/hve-resiliency-platform-context.instructions.md) - evidence-only rules and priority definitions for research prompts.
 * [Planner context instructions](../.github/instructions/hve-resiliency-planner-context.instructions.md) - evidence lock-in and classification rules for planning prompts.
 * [microsoft/hve-core](https://github.com/microsoft/hve-core) - shared HVE agents, instructions, and conventions.

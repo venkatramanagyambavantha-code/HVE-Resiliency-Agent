@@ -29,7 +29,7 @@ skill behavior.
 
 For every eligible networking dependency, assess readiness for both failure scenarios:
 
-* Regional failover from West US 2 to West US
+* Regional failover from {primaryRegion} to {secondaryRegion}
 
 ## Task Researcher Boundary
 
@@ -68,6 +68,69 @@ Evaluate exactly these seven concern groups for every eligible networking depend
 For each evidence-backed issue, classify the failure risk as P0, P1, P2, or P3 under
 the Application Platform Context. Explain why the classification applies and cite the
 smallest supporting file and line range. Unknown alone does not establish a finding.
+
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before any repository
+traversal or discovery action, and before the eligibility gate produces a terminal status. The
+resolved topology scopes the seven existing concern groups above. It adds no concern group,
+assessment area, issue field, or section class, and it never changes the seven-field schema
+below. The resolved topology governs over the architecture assumptions; an assumption is never
+a topology resolution source.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing
+concern groups:
+
+* DNS names that resolve to both regions concurrently, and client, runtime, or library caching
+  that pins one answer while both regions serve
+* TTL handling and resolution refresh while both regions are live, including callers that
+  resolve once at startup
+* Private Endpoint and private DNS resolution in each region, and whether a caller in one
+  region resolves the partner region's regional endpoint
+* Region-specific FQDNs, endpoint constants, or hardcoded addresses that force cross-region
+  traffic while both regions serve
+* Service entries, egress gateways, egress allow-lists, and outbound routes that must exist and
+  resolve in both regions concurrently
+* Session state and affinity across regions, since a request may land in either region
+* Health-probe alignment between the GLB and backends while both pools are live, and the effect
+  of removing one live pool member
+* Connection pooling, keep-alive, and half-open connection handling against a partner region
+  that is also serving
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing
+concern groups instead:
+
+* The secondary's DNS records, resolution path, and probe configuration, which stay unexercised
+  until promotion and whose drift is unobservable while the secondary is idle
+* Parity of Private Endpoints, private DNS zones, and name records between the primary and
+  secondary
+* Parity of egress paths, service entries, egress allow-lists, and outbound routing rules on
+  the secondary, unverified by live traffic
+* TTL-bound resolution convergence at cutover, and the window during which cached answers still
+  point at the primary
+* Connection establishment, name-resolution warm-up, and connection-pool cold start on the
+  secondary path, which are the promotion path
+* Stalled and half-open connections to the primary at cutover, and whether callers re-resolve
+  rather than reuse a pinned connection
+* Readiness evidence for the secondary network path that must be produced without live traffic
+* Failback, including DNS reversal and restoration of the original path after the primary
+  returns
+
+Do not emit a finding and do not record an evidence gap for a dimension the resolved topology
+places out of scope. Under `active-active`, secondary-path parity, unexercised-standby-path
+drift, cutover convergence, and network cold-start dimensions are out of scope. Under
+`active-standby`, concurrent dual-region resolution, simultaneous live routing to both regions,
+and cross-region session affinity dimensions are out of scope. A suppressed dimension is never
+recorded as an evidence gap, an Unknown value, or an issue row.
+
+Where observed evidence does not fit the declared topology, continue under the declared
+topology and record the conflict per the contract's Mismatch Handling rules. Never switch
+topology, never redirect to another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary
+region" and "secondary region", in every issue row. Do not hard-code region names in rendered
+output.
 
 ## Cumulative Discovery Limits
 
@@ -151,9 +214,13 @@ required exact text.
 
 ## Authoritative Artifact
 
-Write the research artifact to `.copilot-tracking/research/` using the repository name
-as the output filename prefix. Restrict the authoritative artifact to these three
-section classes, in this order:
+Write the research artifact to `<researchRoot>` using the repository name
+as the output filename prefix. Stamp the resolved deployment topology in the artifact's
+front matter as `topology: <active-active|active-standby>`, and state it with the
+resolved regions as an evaluation condition in the concise scope summary. Stamping is
+required, is not a fourth section class, and is not an eighth issue field.
+
+Restrict the authoritative artifact to these three section classes, in this order:
 
 1. A concise scope summary
 2. A research-status or terminal summary

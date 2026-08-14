@@ -33,15 +33,23 @@ The manifest records:
 * `schemaVersion`: `hve-resiliency-researcher-7-logging-split/v1`.
 * `repository`: current workspace root basename.
 * `generatedAt`: UTC date `YYYY-MM-DD`.
-* `researchRoot`: normalized workspace-relative research root.
+* `researchRoot`: normalized workspace-relative research root, carried verbatim from the run context lock.
+* `topology`: `active-active` or `active-standby`, carried verbatim from the run context lock resolved per the [Deployment Topology Contract](hve-resiliency-topology.instructions.md). This is the declared deployment topology, never a data write model.
+* `primaryRegion` and `secondaryRegion`: the resolved region display forms, carried verbatim from the same lock.
 * `skeletonPath`: normalized workspace-relative path to the Prompt 7 skeleton artifact.
 * `fragmentDir`: normalized workspace-relative directory holding the five category fragments.
-* `sources`: the accepted Prompt 1a and Prompt 1b artifact records. Each record carries `promptId` (`1a` or `1b`), normalized `path`, `completionStatus`, and `contentSha256` (lowercase SHA-256 hexadecimal digest of the sanitized bytes).
+* `sources`: the accepted Prompt 1a and Prompt 1b artifact records. Each record carries `promptId` (`1a` or `1b`), normalized `path`, `completionStatus`, `contentSha256` (lowercase SHA-256 hexadecimal digest of the sanitized bytes), and `topology` (the artifact's own front-matter stamp copied verbatim, `unstamped` when it carries none, or `mismatched` when it differs from the manifest's `topology`).
 * `eligibleDependencies`: the frozen list of dependencies confirmed as used in Section 1 of the accepted 1a and 1b artifacts, excluding every entry classified in Section 2 or Section 3. Each record carries `dependency` (canonical name), `source` (`1a` or `1b`), and `evidence` (`<normalized-path>:L<start>-L<end>` copied verbatim from the source artifact).
+
+## Topology Stamping and Mismatch
+
+Every artifact this pipeline writes, including the skeleton, each category fragment, the verify audit, and the finalized Prompt 7 artifact, records the manifest's `topology` in its front matter as `topology: <active-active|active-standby>` and states it with the resolved regions as an evaluation condition in its scope or assumptions section. Stamping is required, adds no section, and never carries a data write model.
+
+These are research stages: an input artifact whose stamp differs from the manifest's `topology`, or that carries none, is recorded as `topology: mismatched` or `topology: unstamped` in the manifest and in the reading stage's ledger, and the stage continues under the manifest's topology. See Mismatch Handling in the [Deployment Topology Contract](hve-resiliency-topology.instructions.md). Never stop `Blocked` for a stamp difference here; that is the consolidation half of the rule.
 
 ## Manifest Auto-Location
 
-When a prompt's `manifestPath` input is omitted, auto-locate the frozen Prompt 7 Logging manifest sidecar instead of asking the user. Enumerate files whose name ends with `-hve-resiliency-researcher-7-logging-research.manifest.md` under the research root (`.copilot-tracking/research/` and its `YYYY-MM-DD/` dated subdirectories). Select the candidate under the lexicographically largest dated segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one resolves, use it. If none resolve, stop `Blocked` with `Prompt 7 Logging manifest not found; run hve-resiliency-researcher-7-logging-0-scaffold first`. An explicitly supplied path always overrides auto-location.
+When a prompt's `manifestPath` input is omitted, auto-locate the frozen Prompt 7 Logging manifest sidecar instead of asking the user. Enumerate files whose name ends with `-hve-resiliency-researcher-7-logging-research.manifest.md` under the research root (`<researchRoot>` and its `YYYY-MM-DD/` dated subdirectories). Select the candidate under the lexicographically largest dated segment; if dated segments tie or are absent, select the one whose normalized path sorts last using ordinal comparison. Never use file modification time. If exactly one resolves, use it. If none resolve, stop `Blocked` with `Prompt 7 Logging manifest not found; run hve-resiliency-researcher-7-logging-0-scaffold first`. An explicitly supplied path always overrides auto-location.
 * `categoryRouting`: the five fixed routing keys `startup-health`, `transactions`, `correlation-context`, `log-hygiene`, and `silent-outage-diagnostics`, each mapped to its fill prompt ID and its fragment file name.
 * `paymentApplicability`: `applicable` when payment evidence is confirmed in Section 1 of either accepted 1a or 1b artifact, otherwise `not-applicable`. This value is frozen; downstream stages do not re-derive it.
 
@@ -57,7 +65,7 @@ The five assessment categories are the only assessment axes for this pipeline. E
 * `log-hygiene`: log structure, levels, sinks, payload exposure, redaction, secrets, PCI data, and PII.
 * `silent-outage-diagnostics`: health and dependency diagnostics, healthy-process silent failure, and safe metrics, traces, spans, tags, and dependency signals.
 
-Both platform scenarios apply: West US 2 zone failure and West US 2 to West US regional failover. Never combine zone and regional evidence in one row or finding.
+Both platform scenarios apply: {primaryRegion} zone failure and {primaryRegion} to {secondaryRegion} regional failover. Never combine zone and regional evidence in one row or finding.
 
 ## Bounded Discovery (inherited by every fill prompt)
 
@@ -116,7 +124,7 @@ Every Section 2 finding uses these fields exactly, in this order, with a single 
 * Diagnostic outcome
 * Observed behavior
 * Priority: P0 | P1 | P2 | P3
-* Scenario: West US 2 zone failure | West US 2 to West US regional failover
+* Scenario: {primaryRegion} zone failure | {primaryRegion} to {secondaryRegion} regional failover
 * Optional impact (nullable)
 * Diagnostic impact (nullable)
 * Operational impact (nullable)

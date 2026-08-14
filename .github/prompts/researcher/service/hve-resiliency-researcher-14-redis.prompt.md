@@ -19,7 +19,7 @@ infer eligibility, search for replacement eligibility evidence, or fall back to 
 0, another prompt, or conditional skill behavior.
 
 Review each confirmed dependency as Azure Managed Redis Enterprise in an active-active,
-multi-region configuration with eventual consistency. Assess readiness for regional failover between West US 2 and West US.
+multi-region configuration with eventual consistency. Assess readiness for regional failover between {primaryRegion} and {secondaryRegion}.
 
 ## Task Researcher Boundary
 
@@ -49,6 +49,60 @@ Evaluate all 12 areas for every confirmed Redis dependency:
 For each evidence-backed issue, assess the impact if it remains unchanged. Classify the
 issue as P0, P1, P2, or P3 under the Application Platform Context, explain why the
 classification applies, and cite the smallest supporting file and line range.
+
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before any repository
+traversal or discovery action. The resolved topology scopes the 12 assessment areas above. It adds
+no assessment area, schema field, or section, and it never changes the seven-field issue schema in
+Authoritative Artifact.
+
+The active-active, multi-region Redis configuration named in Eligibility And Scope is a service
+configuration claim to verify from evidence. It is not the deployment topology, and it never
+establishes, adjusts, or overrides the resolved deployment topology.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing areas:
+
+* Cache coherence across regions when the same key is written in both regions concurrently, and the
+  convergence behavior the application assumes
+* Code that assumes immediate cross-region consistency, where a read in one region follows a write
+  taken in the other
+* Hot keys, counters, and read-modify-write sequences executed concurrently in both regions
+* Distributed-lock or leader-election keys that each region would grant independently
+* Session or affinity state held in a regional cache while a request may land in either region
+* Local-endpoint defaults that pin a process to one region's cache while both regions serve traffic
+* Cache-miss and stale-data fallback to the source of truth, exercised continuously in both regions
+* Health-probe alignment that reports own-region cache health continuously
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing areas
+instead:
+
+* Cold cache at promotion, where the secondary starts with no warm working set and every read is a
+  miss against the source of truth
+* Source-of-truth load, timeout, and retry-storm exposure during that cold-cache window
+* Whether the application can start and serve when the secondary cache is empty or unavailable
+* One-way replication lag to the secondary, and the cached state stale or missing at cutover
+* Region selection and fallback configuration that must reach the promoted region without a restart
+* Deployment and configuration parity of the secondary cache client, including drift that stays
+  unobservable while the secondary is idle
+* Cache-dependent scheduled work or singletons that must not execute on the standby, and must
+  activate on promotion
+* Clean failback once the original region is healthy, including stale entries retained across it
+
+Do not emit a finding or record an evidence gap for a dimension the resolved topology places out of
+scope. Under `active-active`, cold-cache-at-promotion, secondary-parity, and cutover-staleness
+dimensions are out of scope. Under `active-standby`, concurrent multi-region write conflict,
+cross-region hot-key contention, and cross-region read-your-own-writes dimensions are out of scope.
+A suppressed dimension is never recorded as an evidence gap, an `Unknown` value, or an
+`Unknown: two-round prompt budget exhausted` value.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and
+record the conflict per the contract's Mismatch Handling rules. Never switch topology, never
+redirect to another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary region" and
+"secondary region", in every issue row. Do not hard-code region names in rendered output.
 
 ## Cumulative Discovery Limits
 
@@ -119,7 +173,7 @@ outcome.
 
 ## Authoritative Artifact
 
-Write the research artifact to `.copilot-tracking/research/` using the repository name
+Write the research artifact to `<researchRoot>` using the repository name
 as the output filename prefix. The artifact contains exactly these section classes:
 
 1. A concise scope summary
@@ -129,6 +183,12 @@ as the output filename prefix. The artifact contains exactly these section class
 Do not include tool calls, counters, searches, reads, traversal details, file-analysis
 narration, discovery narration, repeated evidence, or any additional authoritative
 section.
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved regions as
+an evaluation condition in the scope summary. Stamp the resolved deployment topology
+only; never stamp a Redis service configuration or a data write model in that field.
+Stamping is required and adds no section class.
 
 Keep independently actionable Redis failure modes in distinct rows. Do not merge rows
 because they share a dependency, location, priority, or risk level. Start every `Issue

@@ -14,6 +14,18 @@ Apply this context to all resiliency Task Planner prompts.
 * Use the research as fixed constraints
 * Never paraphrase referenced code. If a finding or recommendation uses code, keep it accurate to the file it comes from - matching path, line numbers, and exact text - and ensure any proposed fix builds on exactly that code
 
+## Deployment Topology
+
+Follow the [Deployment Topology Contract](hve-resiliency-topology.instructions.md) in full. It governs how every prompt resolves the run's deployment topology, what that topology changes about the assessment, and how topology is stamped and enforced across artifacts.
+
+The three rules that bind every prompt in this file's scope:
+
+* Resolve the deployment topology before reading any planning input or rendering any output. Absent an explicit `${input:topology}` and a locatable run context lock, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`.
+* Topology is declared, never discovered. Never derive or override it from the consolidated research, a prior planner artifact, a `Target Deployment` header already written into a report, or any repository evidence. Contradicting evidence is a finding, not a correction.
+* Stamp the resolved topology in every artifact's front matter and in its scope or assumptions section.
+
+Resolve `{primaryRegion}`, `{secondaryRegion}`, and `{targetDeployment}` from the same lock, and carry them verbatim. Use the resolved values or the neutral terms "primary region" and "secondary region"; do not hard-code region names in findings, recommendations, or generated output.
+
 ## Status and Failure Semantics
 
 Every prompt ends in exactly one terminal state: `Complete`, `Incomplete`, or `Blocked`. Blocking is reserved for one condition only and is never used for anything discovered inside the repository or the consolidated research it is planning from. This section is never overridden by a prompt's stage-specific rules.
@@ -42,25 +54,25 @@ When code cannot be captured or verified during the build, run `/fix-assessment-
 ## Engagement Context
 
 * **Customer**: Albertsons
-* **Objective**: Transition from a single-region deployment (West US with East US as DR only) to an **active/active deployment across West US and West US 2**
-* **Current State**: Single-region production deployment in West US. East US serves only as a passive disaster recovery target. No Global Load Balancer (GLB). Traffic enters through edge application gateways.
-* **Target State**: Multi-region active/active with GLB-driven full-stack failover across West US and West US 2. The GLB makes all failover decisions; applications do not fail themselves over. Applications must feed health data to the GLB via health probes.
+* **Objective**: Transition from a single-region deployment in the primary region to the **declared deployment topology** across `{primaryRegion}` and `{secondaryRegion}`, resolved from the run context lock
+* **Current State**: Single-region production deployment in `{primaryRegion}`. No Global Load Balancer (GLB). Traffic enters through edge application gateways.
+* **Target State**: `{targetDeployment}` as declared in the run context lock, with GLB-driven full-stack failover across `{primaryRegion}` and `{secondaryRegion}`. The GLB makes all failover decisions; applications do not fail themselves over. Applications must feed health data to the GLB via health probes.
 * **Scope**: Code assessment and resiliency recommendations across multiple application repos and microservices. Some services are **pattern-only** (Postgres SQL, Event Hub): recommendations but no full execution.
 * **Constraint**: The customer makes all code changes themselves. The team does **not** have source code write access. Reports must be actionable enough for the customer's developers to implement independently.
 
-> **Critical framing**: Every finding must be evaluated through the lens of this transition. The customer is not adding a second region for capacity; they are moving from a passive DR model to active/active. Findings that block or degrade this transition are the highest priority.
+> **Critical framing**: Every finding must be evaluated through the lens of this transition. The customer is not adding a second region for capacity; they are moving from one live region to the declared topology. Findings that block or degrade this transition are the highest priority. Under `active-standby` the secondary region is not a passive disaster recovery target: it is expected to hold deployment and configuration parity, real provisioned capacity, continuous health probing, and the ability to accept traffic within RTO as a routine operation.
 
 ## Region-Agnostic Output Rule
 
-All **generated report output** (finding descriptions, recommendations, code examples, H3 group names) must **never** reference "East US", "eastus", or any East region variant. East US is a legacy DR target that is not part of the active/active architecture.
+All **generated report output** (finding descriptions, recommendations, code examples, H3 group names) must **never** hard-code a region name. Render regions from the values resolved out of the run context lock, using the `{primaryRegion}` and `{secondaryRegion}` placeholders, or use the topology-neutral terms below.
 
 Prefer region-agnostic language throughout:
 
-* **Primary region**: the current production region
-* **Secondary region** or **failover region**: the target active/active peer
+* **Primary region**: the region serving production traffic today
+* **Secondary region** or **failover region**: the peer region of the declared target topology
 * **Both regions**: when referring to symmetric requirements
 
-"West US" and "West US 2" may be used when necessary (e.g., describing the customer's actual topology or referencing specific configuration), but prefer the generic terms above when the statement applies to any multi-region deployment.
+A resolved region name may appear in output only where the statement is specific to this run's deployment (for example describing the customer's actual topology or referencing a specific configuration value), and even then it is rendered from `{primaryRegion}` or `{secondaryRegion}`, never typed as a literal. Prefer the generic terms above when the statement applies to any multi-region deployment.
 
 In code examples and fix blocks, use placeholder values like `{primaryRegion}`, `{secondaryRegion}`, or generic hostnames (e.g., `apim-prod-region1.example.com`) rather than region-specific names.
 
@@ -68,15 +80,15 @@ In code examples and fix blocks, use placeholder values like `{primaryRegion}`, 
 
 ### The Litmus Test
 
-> **"Does going from single-region (West US with East US DR) to active/active (West US + West US 2) introduce or change this issue?"**
+> **"Does going from a single-region deployment in `{primaryRegion}` to `{targetDeployment}` — the declared topology across `{primaryRegion}` and `{secondaryRegion}` — introduce or change this issue?"**
 
-* If **YES**: the issue is resiliency-related. The behavior changes, worsens, or becomes newly relevant when operating across multiple active regions or when a failover event occurs. **Categorize as a resiliency finding.**
-* If **NO**: the behavior is identical whether the application runs in a single region or multiple regions. This is a code-quality or logic bug. **Do not categorize as resiliency** unless the issue can be reframed in terms of resiliency impact (see Rule 2 below).
+* If **YES**: the issue is resiliency-related. The behavior changes, worsens, or becomes newly relevant under the declared topology, or when a failover event occurs. Under `active-active` that includes anything that changes once both regions serve traffic simultaneously; under `active-standby` it includes anything that changes while the standby sits idle, at promotion, or at failback. **Categorize as a resiliency finding.**
+* If **NO**: the behavior is identical whether the application runs in a single region or under the declared topology. This is a code-quality or logic bug. **Do not categorize as resiliency** unless the issue can be reframed in terms of resiliency impact (see Rule 2 below).
 
 ### The Four Rules
 
 **Rule 1 — Failover Is the Central Pillar**
-If a finding does not interact with failover mechanics (GLB routing, health probes, region-aware configuration, dependency availability across regions), it should drop in priority. The transition from passive DR to active/active failover is the lens through which all findings are evaluated.
+If a finding does not interact with failover mechanics (GLB routing, health probes, region-aware configuration, dependency availability across regions), it should drop in priority. The transition from a single live region to the declared topology, and the failover mechanics that topology requires, is the lens through which all findings are evaluated.
 
 **Rule 2 — Resiliency Wording Is Required**
 Every finding placed in the resiliency bucket **must** articulate the resiliency impact in its description. The framing must be:
@@ -102,20 +114,27 @@ Use this consistently in all outputs:
 
 ### P0 — Critical Resiliency Risk
 
-**Definition**: The finding **blocks failover from functioning** or **renders the active/active deployment meaningless**. Without this fix, the investment in a second region provides no benefit.
+**Definition**: By resolved deployment topology:
+
+* `active-active`: the finding **blocks failover from functioning**, or **breaks correctness while both regions serve traffic simultaneously**.
+* `active-standby`: the finding **blocks failover from functioning**, or **prevents the standby region accepting traffic within RTO**.
+
+Without this fix, the investment in a second region provides no benefit.
 
 **Criteria** (any of the following):
 
 * Hard-coded region-specific values (connection strings, endpoints, IPs) where the application must switch from a single-region FQDN or IP to an abstracted listener/endpoint that covers both regions. The fix is to use the single abstracted endpoint (e.g., failover group listener) that routes to whichever region is active, not to add both region values.
-* GLB health probes not yet implemented: health probe endpoints are net-new work required for the GLB to make informed failover decisions.
+* GLB health probes not yet implemented: health probe endpoints are net-new work required for the GLB to make informed failover decisions. Under `active-standby`, probes must additionally prove standby readiness without live traffic.
 * Dependencies deployed in only one region with no plan for the second region: failing over gains nothing if the dependency does not exist in the target region.
 * Connection strings pointing to single-region SQL Server FQDNs instead of failover group listener names.
 * Application logic that assumes a specific region and breaks when executed in the other region.
+* Under `active-active` only: logic that is correct with one live region but not with two serving concurrently — concurrent writes with no conflict resolution, identifier or sequence generation that collides across regions, schedulers, singletons, or leader-elected paths that execute in both regions at once.
+* Under `active-standby` only: anything that keeps the standby from accepting traffic within RTO — deployment or configuration drift that is unobservable while the standby is idle, standby capacity defined but not provisioned, a startup or warm-up path that has never been exercised, or readiness that cannot be proven before promotion.
 * Prerequisites for other P0 resiliency fixes: if fixing A is required before fixing B, and B is P0, then A is also P0.
 
 ### P1 — Important Resiliency Risk
 
-**Definition**: The finding is resiliency-related (passes the litmus test) but has a **procedural workaround**, **lower blast radius**, or **does not fully block failover**.
+**Definition**: The finding is resiliency-related (passes the litmus test) but has a **procedural workaround**, **lower blast radius**, or **does not fully block failover**. By resolved deployment topology: under `active-active` it degrades correctness or customer experience while both regions serve traffic without making the pair unsafe to run; under `active-standby` it degrades the promotion path or extends recovery time without preventing the standby accepting traffic within RTO.
 
 **Criteria** (any of the following):
 
@@ -126,7 +145,7 @@ Use this consistently in all outputs:
 
 ### P2 — Code Quality / Non-Resiliency
 
-**Definition**: The finding is a valid code issue but **behaves identically in single-region and active/active**. The multi-region deployment does not introduce, amplify, or change this issue.
+**Definition**: The finding is a valid code issue but **behaves identically in a single-region deployment and under the declared topology**. The multi-region deployment does not introduce, amplify, or change this issue.
 
 **Important**: These findings should still be reported. But they do **not** belong in the resiliency bucket and should not be prioritized above P0/P1 resiliency items. Frame them as code-quality recommendations, not resiliency risks.
 
@@ -148,10 +167,13 @@ Use this consistently in all outputs:
 START: New finding identified
   │
   ▼
-Q1: Does moving from single-region (with passive DR) to active/active
-    introduce or change this issue?
+Q1: Does moving from a single-region deployment in the primary region to
+    the declared topology ({targetDeployment}) introduce or change this issue?
   │
-  ├── YES ──► Q2: Does this fix block failover from working at all?
+  ├── YES ──► Q2: Does this block failover from working at all, or, for the
+  │             resolved topology, break correctness while both regions serve
+  │             traffic (active-active) or prevent the standby accepting
+  │             traffic within RTO (active-standby)?
   │             │
   │             ├── YES ──► P0 — Critical Resiliency Risk
   │             │
@@ -198,7 +220,7 @@ When writing findings and recommendations, keep the following system topology in
    * Per **dependency** (are the services I depend on reachable?)
    * Per **shared service** (are platform-level shared services available?)
    * The app must report health of its **own** region AND awareness of whether the **failover-target region** is healthy, so the GLB can make informed decisions.
-3. **Dependencies must exist in both regions**: If a dependency is only deployed in the primary region, failover to the secondary region gains nothing for that dependency path. Flag any single-region dependency as P0.
+3. **Dependencies must exist in both regions**: If a dependency is only deployed in the primary region, failover to the secondary region gains nothing for that dependency path. Under `active-active`, the dependency must serve both regions concurrently under live traffic. Under `active-standby`, it must already be deployed, current, and reachable from the standby before promotion — provisioning it at cutover time is not a plan. Flag any single-region dependency as P0 under either topology.
 4. **Use abstracted endpoints**: Recommendations should direct toward region-agnostic connection patterns. SQL Server uses failover group listener name, not individual server FQDNs. Do **not** recommend putting both region-specific values in config; recommend the single abstracted value that routes to whichever region is active.
 5. **Customer owns all code changes**: Recommendations must be specific and self-contained enough for the customer's developers to implement without the team's involvement.
 6. **Pattern-only services**: Postgres SQL, Event Hub, and potentially others are pattern-only scope (recommendations only, no full execution or testing). Flag these clearly.
@@ -212,7 +234,7 @@ When writing findings and recommendations, keep the following system topology in
 
 ## Output File Naming Rule
 
-All output files and reports must use the current repository name (or a user-supplied context variable) as the prefix, not a hardcoded value. For example, output to `.copilot-tracking/research/<repo-name>-planner-report.md`.
+All output files and reports must use the current repository name (or a user-supplied context variable) as the prefix, not a hardcoded value. For example, output to `<researchRoot>/<repo-name>-planner-report.md`.
 
 ## Context Management
 

@@ -35,6 +35,33 @@ Analyze only these existing state and data areas:
 
 Do not add an assessment topic. Cite repository file-lines for every known characteristic, causal behavior, mitigation, constraint, limitation, and failover-risk claim.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before any traversal. The resolved topology scopes the existing Assessment Scope topics above. It adds no assessment topic, output field, or section, and it never changes the Output Schema.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing topics:
+
+* Concurrent writes to the same record from both regions, and the conflict-resolution behavior that governs them
+* Generation of identifiers, sequences, or keys that must stay unique across both regions
+* Read-your-own-writes exposure when a read resolves in the region that did not take the write
+* Idempotency of steady-state processing, given that both regions process concurrently
+* Scheduled work, singletons, or leader-elected paths that would execute in both regions at once
+* Session state, affinity, or cache coherence assumptions that hold only when a caller stays in one region
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing topics instead:
+
+* One-way replication lag between primary and secondary, and the writes, messages, or records at risk at cutover
+* Deployment and configuration parity of the secondary, including drift that stays unobservable while the secondary is idle
+* Cold-start, warm-up, and scale-from-zero paths on the secondary, which are the promotion path
+* Provisioned capacity of the secondary, distinct from capacity that is only defined
+* Scheduled work or singletons that must not execute on the standby, and must activate on promotion
+* State that is rebuilt rather than carried at promotion, and the correctness consequences of rebuilding it
+* Failback and reverse replication after the primary returns
+
+Do not emit a finding or record an evidence gap for a dimension the resolved topology places out of scope. Under `active-active`, replication-lag-at-cutover and standby-parity dimensions are out of scope. Under `active-standby`, concurrent-write conflict, cross-region identifier collision, and read-your-own-writes dimensions are out of scope.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules. Never switch topology and never decline to run.
+
 ## Bounded Discovery
 
 * Apply all limits cumulatively per confirmed dependency. Aliases, environments, wording, questions, repeated research, and subagent calls cannot reset or transfer a counter.
@@ -57,6 +84,8 @@ Do not add an assessment topic. Cite repository file-lines for every known chara
 * Stop repository traversal when every existing field has a terminal ledger outcome. Complete one repository-free ledger review and stop when it adds nothing.
 
 ## Output Schema
+
+Stamp the resolved deployment topology in the artifact's front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation condition in the artifact's scope. Stamping is required and is not one of the three sections below.
 
 Write exactly these three sections, labels, and order. Add no field or section. Repeat a section's field set only for distinct stable rows.
 

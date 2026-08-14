@@ -13,9 +13,9 @@ whether that instructions file is auto-applied.
 ## Inputs
 
 * `${input:prompt1aArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt
-  1a dependency inventory artifact under `.copilot-tracking/research/`.
+  1a dependency inventory artifact under `<researchRoot>`.
 * `${input:prompt1bArtifactPath}`: (Required) Exact workspace-relative path to the completed Prompt
-  1b dependency validation artifact under `.copilot-tracking/research/`.
+  1b dependency validation artifact under `<researchRoot>`.
 
 Use only these exact paths for prerequisite artifacts. Never search, glob, select the latest file, or
 infer a prerequisite path.
@@ -30,7 +30,7 @@ render, and verification bounds in this prompt.
 
 Assess only the current repository for these scenarios:
 
-* Full regional failover between West US 2 and West US
+* Full regional failover between {primaryRegion} and {secondaryRegion}
 
 Assess only these seven Key Vault areas:
 
@@ -48,12 +48,66 @@ endpoint behavior, synchronization, or application and pipeline responsibility. 
 model, private endpoint, synchronization, or responsibility statements as evidence gaps or constraints,
 without converting them into recommendations.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before the prerequisite gate, the
+frozen manifest, or any query family. The resolved topology scopes the seven Key Vault areas above. It adds
+no assessment area, ownership field, or section, and it never changes the output schema.
+
+The vault model remains a claim to verify from evidence. The declared deployment topology never establishes
+a per-region vault, a single shared vault, replication between vaults, or automatic failover behavior, and
+an observed vault model never establishes or overrides the declared deployment topology.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing areas:
+
+* Whether each region resolves a vault in its own region, or both regions read one vault in a single region
+* Vault URI, endpoint, or region binding that pins both regions to one vault while both serve traffic
+* Divergence between per-region vaults, where the same secret, certificate, or key category holds a
+  different version or value in each region
+* Rotation or refresh that writes to one vault while both regions read concurrently
+* Client caching of secret material, including cache lifetime and refresh, when a request may land in
+  either region
+* Synchronization pipelines, replication jobs, drift controls, and write guardrails that must hold both
+  vaults consistent under steady state
+* Identity, private endpoint, and network path bindings that must resolve in both regions concurrently
+* Health and global load balancer alignment that reports own-region vault reachability continuously
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing areas instead:
+
+* Availability of the secondary vault at promotion, including whether a secondary vault exists at all
+* One-way replication of secret, certificate, and key material to the secondary, and the material stale or
+  missing at promotion
+* Drift between primary and secondary vault contents that stays unobservable while the secondary is idle
+* Rotation performed only against the primary vault, leaving the standby holding superseded material at
+  promotion
+* Cold client construction, first token acquisition, and first secret fetch on the secondary, which is the
+  promotion path
+* Failover triggers, sequencing, DNS, and endpoint changes that must move the application to the secondary
+  vault without a restart or a redeployment
+* Identity, private endpoint, and network path bindings that exist only for the primary and have no
+  secondary counterpart
+* Failback and reverse synchronization after the original region returns
+
+Do not admit a candidate, emit a finding, or record an evidence gap for a dimension the resolved topology
+places out of scope. Under `active-active`, replication-at-promotion, standby-vault-parity, and cold-start
+dimensions are out of scope. Under `active-standby`, concurrent cross-region rotation conflict and
+cross-region read-your-own-writes dimensions are out of scope. A suppressed dimension is never recorded as
+an evidence gap, an `Unknown: evidence unavailable` value, or a `Not observed in completed searches` entry.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record
+the conflict per the contract's Mismatch Handling rules. Never switch topology, never redirect to another
+prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary region" and
+"secondary region", in every finding. Do not hard-code region names in rendered output.
+
 ## Prerequisite gate
 
 Validate both input paths before repository research:
 
 1. Normalize each path and confirm it is a workspace-relative file beneath
-   `.copilot-tracking/research/`, with no traversal, absolute-path, link, or cross-repository escape.
+   `<researchRoot>`, with no traversal, absolute-path, link, or cross-repository escape.
 2. Parse YAML frontmatter from both artifacts. Require `repository`, `assessmentId`, `revision`, `status`,
    `generatedAt`, and `promptId` as non-empty strings. Require `status: Complete`; `promptId: 1a` for the
    supplied Prompt 1a artifact and `promptId: 1b` for the supplied Prompt 1b artifact; `generatedAt` as
@@ -211,10 +265,17 @@ correction occurs, run one post-correction verification. Do not exceed two full 
 ## Output
 
 Write one sanitized research artifact to
-`.copilot-tracking/research/<repository-name>-hve-resiliency-researcher-10-keyvault-research-output.md`,
+`<researchRoot>/<repository-name>-hve-resiliency-researcher-10-keyvault-research-output.md`,
 where `<repository-name>` is the sanitized current repository root directory name. Include the terminal
 status, metrics, candidate disposition ledger and mappings, then render each valid finding exactly once
-with this centralized service schema:
+with this centralized service schema.
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation
+condition alongside the terminal status. Stamp the resolved deployment topology only; never stamp a vault
+model in that field. Stamping is required and adds no artifact section or finding field.
+
+Render each valid finding with these fields:
 
 * Issue Description:
 * Risk Level (P0/P1/P2/P3):

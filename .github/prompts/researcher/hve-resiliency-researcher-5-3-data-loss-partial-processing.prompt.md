@@ -39,6 +39,34 @@ Data-loss / partial-processing discovery hints (evidence-only):
 
 Never emit a row solely because durability documentation is unavailable; require positive repository evidence that a code path can lose, duplicate, or partially process a record under the stated dependency failure type.
 
+## Topology Deltas
+
+Read the resolved deployment topology from the frozen manifest, exactly as this stage reads `eligibleDependencies`. Do not re-resolve it, do not infer it from repository contents, and do not override it. If the manifest records no topology, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`. The [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) governs. The resolved topology scopes the data-loss and partial-processing discovery hints above. It adds no assessment topic, output field, or section, and it never changes the Required Row Schema.
+
+The resolved deployment topology is not a data write model. Record an observed write model as evidence on the row it belongs to; never treat it as a correction to the declared topology.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing hints:
+
+* Concurrent writes to the same record from both regions, and the conflict-resolution or last-write-wins behavior that governs them, including write skew.
+* Identifier, sequence, and key generation that must stay unique across both regions, and the collision that overwrites or corrupts a record.
+* Idempotency and duplicate processing under steady state, since both regions process concurrently and continuously.
+* Schedulers, cron jobs, singletons, and leader-elected consumers that execute in both regions at once and process the same message twice.
+* Bidirectional replication lag in both directions, and the writes, messages, or records at risk while a record converges.
+* Read-your-own-writes exposure that causes a multi-step write to read stale state and commit an inconsistent result.
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing hints instead:
+
+* One-way replication lag from primary to secondary, and the recovery point exposure at cutover: writes, messages, or records acknowledged on the primary but not replicated.
+* In-flight and uncommitted work on the primary at cutover, including consumer offsets committed on the primary but not replicated.
+* Idempotency and duplicate processing bounded to the cutover window, where work is replayed on the secondary after promotion.
+* Consumers, producers, and scheduled writers that must not process on the standby and must activate on promotion, and the records lost or double-processed when either fails.
+* State rebuilt rather than carried at promotion, and the records whose correctness depends on the discarded state.
+* Failback and reverse replication after the primary returns, and writes taken on the secondary that must not be lost or overwritten.
+
+Do not emit a row and do not record an evidence gap for a dimension the resolved topology places out of scope. Under `active-active`, replication lag at cutover, recovery point exposure at promotion, promotion-time state rebuild, and failback and reverse replication are out of scope and must not be recorded as evidence gaps. Under `active-standby`, concurrent multi-region write conflict, cross-region identifier and sequence collision, and read-your-own-writes across regions are out of scope and must not be recorded as evidence gaps; duplicate processing is in scope only within the bounded cutover window, not under steady state.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules. Never switch topology and never decline to run.
+
 ## Bounded Discovery
 
 Apply the bounded-discovery limits in the shared contract per eligible dependency and per this outcome only. Counters do not carry over from another outcome fill and cannot be reset by aliases, environments, or wording.
@@ -53,7 +81,7 @@ Never combine regional-failover and partial-outage evidence in one row. If the s
 
 ## Output
 
-Write the fragment to `<fragmentDir>/data-loss-partial-processing.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.3 Data Loss or Partial Processing` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-3-data-loss-partial-processing`, `outcome-key: data-loss-partial-processing`, and the fragment's terminal status. Do not modify the skeleton artifact. Do not touch any other fragment.
+Write the fragment to `<fragmentDir>/data-loss-partial-processing.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.3 Data Loss or Partial Processing` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-3-data-loss-partial-processing`, `outcome-key: data-loss-partial-processing`, and the fragment's terminal status. Stamp the resolved deployment topology in the same frontmatter as `topology: <active-active|active-standby>`, carried verbatim from the manifest, and state it with the resolved regions as an evaluation condition. Stamp the deployment topology only; never stamp a write model in that field. Stamping is required and adds no field to the Required Row Schema. Do not modify the skeleton artifact. Do not touch any other fragment.
 
 ## Completion
 

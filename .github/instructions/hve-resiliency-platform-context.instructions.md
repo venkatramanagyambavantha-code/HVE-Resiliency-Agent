@@ -8,13 +8,25 @@ applyTo: '.github/prompts/researcher/hve-resiliency-researcher-*.prompt.md, .git
 Apply this context to all Application Platform resiliency research prompts.
 
 * Albertsons operates applications in Azure
-* Validating readiness for full application regional failover between West US 2 and West US
+* Validating readiness for full application regional failover between the primary and secondary regions declared in the run context lock
 * Scope is the current repository within the Application Platform
 * HVE Task Researcher rules: evidence only, no remediation, no code examples
 * All findings must cite file and line-level evidence
 * Never paraphrase referenced code. If a finding quotes or describes code, copy it verbatim from the source file and confirm the cited path and line numbers match that file exactly
 * Classify every finding using the priority framework: P0 (Blocking/Critical), P1 (High Priority), P2 (Improvement/Best Practice), P3 (Non-Blocking Code Consistency)
-* Output research artifacts to `.copilot-tracking/research/` and use the repository name as the prefix for all output files (e.g., `<repo-name>-research-output.md`).
+* Output research artifacts to `<researchRoot>` and use the repository name as the prefix for all output files (e.g., `<repo-name>-research-output.md`).
+
+## Deployment Topology
+
+Follow the [Deployment Topology Contract](hve-resiliency-topology.instructions.md) in full. It governs how every prompt resolves the run's deployment topology, what that topology changes about the assessment, and how topology is stamped and enforced across artifacts.
+
+The three rules that bind every prompt in this file's scope:
+
+* Resolve the deployment topology before any repository traversal. Absent an explicit `${input:topology}` and a locatable run context lock, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`.
+* Topology is declared, never discovered. Never derive or override it from dependency inventories, database capabilities, infrastructure definitions, or any other repository evidence. Contradicting evidence is a finding, not a correction.
+* Stamp the resolved topology in every artifact's front matter and in its scope or assumptions section.
+
+Resolve `{primaryRegion}` and `{secondaryRegion}` from the same lock. Use the resolved values or the neutral terms "primary region" and "secondary region"; do not hard-code region names in findings or output.
 
 ## Status and Failure Semantics
 
@@ -53,15 +65,13 @@ Every prompt ends in exactly one terminal state: `Complete`, `Incomplete`, or `B
 ## Database-to-Kafka Pairing Standard
 
 * Kafka runs on Confluent Cloud (managed). Treat Confluent Cloud as the confirmed Kafka platform for both topologies; never ask the operator which Kafka provider, product, or environment is in use.
-* Databases that support Active-Active multi-master writes (for example Cosmos DB via Mongo API) pair with Kafka Active-Active
-* Databases that support only Active-Standby single-master writes (for example Azure SQL) pair with Kafka Active-Standby
-* An application using both an Active-Active and an Active-Standby database pairs with Kafka Active-Standby
-* Before running the Kafka service-specific prompt (16), confirm whether Cosmos DB and/or Azure SQL were confirmed in the Prompt 1 Section 1 dependency inventory, then select `hve-resiliency-researcher-16-kafka-active-active` or `hve-resiliency-researcher-16-kafka-active-standby-confluent` accordingly. When neither is confirmed, do not auto-select; ask the operator which Kafka topology the application uses before selecting the prompt.
-* Kafka service-specific prompts (16) must record whether the repository's confirmed database resiliency model matches the Kafka topology assumed by the selected prompt, and flag any mismatch as a finding
+* Classify each confirmed database by its observed **data write model**, not by a deployment topology: multi-master (for example Cosmos DB via Mongo API), single-master (for example Azure SQL), or mixed when both are present. This is discovered evidence, distinct from the declared deployment topology.
+* The Kafka service-specific prompt (16) is selected by the resolved deployment topology, not by the database inventory. `active-active` selects `hve-resiliency-researcher-16-kafka-active-active`; `active-standby` selects `hve-resiliency-researcher-16-kafka-active-standby-confluent`. Never ask the operator which topology to use; it is established by the run context lock.
+* The database write model is a cross-check, not a selector. Record whether the repository's observed write model fits the declared deployment topology, and record any mismatch as a finding per the Mismatch Handling rules in the Deployment Topology Contract. Never switch prompts, redirect, or decline to run because of a mismatch.
 
 ## Context Management
 
-A context reset (`/clear` or a new chat) is a clarity and cost tool, not a correctness requirement: durable artifacts under `.copilot-tracking/research/` carry context forward between prompts. For manual, one-prompt-per-turn runs, a reset before each prompt keeps input scoped to the prior artifact plus the current prompt (the Mode A cost optimization); it is recommended for cost and optional for correctness. At minimum, reset at phase boundaries and when switching agents. The resiliency orchestrator agents manage context automatically by dispatching each step to a fresh subagent, so no manual reset is needed when using them.
+A context reset (`/clear` or a new chat) is a clarity and cost tool, not a correctness requirement: durable artifacts under the resolved research root, plus the run context lock, carry context forward between prompts. Deployment topology and regions in particular are never carried by chat history; every prompt re-resolves them from the lock on disk. For manual, one-prompt-per-turn runs, a reset before each prompt keeps input scoped to the prior artifact plus the current prompt (the Mode A cost optimization); it is recommended for cost and optional for correctness. At minimum, reset at phase boundaries and when switching agents. The resiliency orchestrator agents manage context automatically by dispatching each step to a fresh subagent, so no manual reset is needed when using them.
 
 ## Next Step Suggestions
 
@@ -73,6 +83,7 @@ Follow this sequence:
 
 | Current Prompt                      | Next Step                                                                                                               |
 |-------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
+| `/hve-resiliency-topology-0-lock`         | `/hve-resiliency-researcher-0`                                                                                                |
 | `/hve-resiliency-researcher-0`            | `/hve-resiliency-researcher-1a`                                                                                               |
 | `/hve-resiliency-researcher-1a`           | `/hve-resiliency-researcher-1b` (review Section 1 results first)                                                              |
 | `/hve-resiliency-researcher-1b`           | `/hve-resiliency-researcher-2` (review Section 1 results from 1a and 1b; Sections 2-3 are excluded from here on)              |

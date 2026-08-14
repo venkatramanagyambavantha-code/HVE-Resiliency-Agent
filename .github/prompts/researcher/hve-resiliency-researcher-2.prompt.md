@@ -28,7 +28,7 @@ create inherited primary or subagent artifacts.
 
 Identify all evidence-confirmed regional failoverassumptions in the
 current repository. Evaluate each assumption for regional failover between 
-West US and West US 2 as part of the target deployment.
+{primaryRegion} and {secondaryRegion} as part of the target deployment.
 
 Cover production application code, configuration, infrastructure as code,
 deployment manifests, pipelines, scripts, and operational runbooks. Evaluate
@@ -37,6 +37,69 @@ stored in files; implicit defaults; single-active-region
 logic; endpoints, URLs, or IP addresses; resource identifiers; deployment
 locations and topology; routing; affinity; and environment-specific values that
 reference one region.
+
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../instructions/hve-resiliency-topology.instructions.md) before the
+manifest, the candidate scan, or any repository traversal. The resolved topology
+scopes the existing assumption classes in the Objective above. It adds no
+assumption class, output field, or section, and it never changes the Output
+Contract.
+
+When the resolved topology is `active-active`, treat these as in scope within
+the existing assumption classes:
+
+* Endpoints, URLs, IP addresses, or resource identifiers that bind a request
+  path to one region while either region may serve that request
+* Routing and affinity configuration that holds only while a caller stays in
+  one region
+* Single-active-region logic in application code, configuration, or
+  infrastructure that names one region as the sole writer or sole active target
+* Identifier, sequence, or key allocation bound to one region's naming or
+  allocation scheme, where uniqueness must hold across both regions
+* Scheduled work, singletons, or leader-elected entries in pipelines,
+  manifests, scripts, or runbooks that would execute in both regions at once
+* Per-region capacity and scale values, given that each region absorbs full
+  load on partner loss
+* Credential, security, or identity values scoped to one region while both
+  regions authenticate concurrently
+
+When the resolved topology is `active-standby`, treat these as in scope within
+the existing assumption classes instead:
+
+* Deployment and configuration parity between the primary and secondary
+  definitions, including drift that stays unobservable while the secondary is
+  idle
+* Region names, endpoints, resource identifiers, and environment-specific
+  values that exist only for the primary and have no secondary counterpart
+* Cold-start, warm-up, and scale-from-zero settings on the secondary, which is
+  the promotion path
+* Secondary capacity that is provisioned, distinct from capacity that is only
+  defined
+* Scheduled work or singletons in manifests, pipelines, scripts, or runbooks
+  that must not execute on the standby and must activate on promotion
+* One-way replication direction and recovery-point exposure at cutover, as
+  expressed in configuration and infrastructure definitions
+* Health probe and readiness configuration that proves standby readiness
+  without live traffic
+* Operational failover and failback steps in runbooks, including the reverse
+  path after the primary returns
+
+Do not emit a finding or record an evidence gap for a dimension the resolved
+topology places out of scope. Under `active-active`, secondary-parity,
+cold-start and warm-up, and explicit failback-path dimensions are out of scope.
+Under `active-standby`, concurrent multi-region write, cross-region identifier
+collision, and read-your-own-writes dimensions are out of scope. A suppressed
+dimension is never recorded as an evidence gap or an undisposed candidate.
+
+Where observed evidence does not fit the declared topology, continue under the
+declared topology and record the conflict per the contract's Mismatch Handling
+rules. Never switch topology and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms
+"primary region" and "secondary region", in every finding. Do not hard-code
+region names in rendered output.
 
 ## Required Steps
 
@@ -124,8 +187,13 @@ Resolve prerequisites in this order and prefer proceeding over blocking.
 ## Output Contract
 
 Write the result to
-`.copilot-tracking/research/<repo-name>-researcher-2-region-zone-assumptions.md`.
+`<researchRoot>/<repo-name>-researcher-2-region-zone-assumptions.md`.
 Keep it evidence-only. Do not include remediation, advice, or code examples.
+
+Stamp the resolved deployment topology in the artifact's front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved
+regions as an evaluation condition in the artifact's scope. Stamping is required
+and is not one of the fields below.
 
 For `Complete - Findings`, repeat these fields for each evidence-confirmed
 assumption. Preserve the labels exactly.

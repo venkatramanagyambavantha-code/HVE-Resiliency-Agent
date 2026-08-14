@@ -30,13 +30,15 @@ Orchestrator that runs the resiliency planning pipeline end to end from a single
 The canonical step sequence and classification rules are defined by the skill and planner instructions, not duplicated here. At the start of Step 1, read these files once in a single parallel `read_file` block:
 
 * [hve-resiliency-research skill](../skills/hve-resiliency-research/SKILL.md) (Phase 4 and Phase 5 Required Workflow)
+* [Deployment Topology Contract](../instructions/hve-resiliency-topology.instructions.md) (topology resolution, vocabulary, assessment deltas, region resolution, artifact stamping, mismatch handling)
 * [Resiliency Task Planner Context](../instructions/hve-resiliency-planner-context.instructions.md) (engagement framing, litmus test, P0-P3 classification, architectural constraints, region-agnostic output, code fidelity, output file naming)
 
 Apply those procedures verbatim.
 
 ## Inputs
 
-* `${input:consolidatedDoc}`: (Optional) Workspace-relative path to the consolidated research document. When omitted, locate the most recent completed consolidated document under `.copilot-tracking/research/`.
+* `${input:topology}`: (Required) Exactly `active-active` or `active-standby`. There is no default and it is never inferred. Passed to every dispatched step. If it is absent, resolve it from the run context lock per Step 0; if neither resolves, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`.
+* `${input:consolidatedDoc}`: (Optional) Workspace-relative path to the consolidated research document. When omitted, locate the most recent completed consolidated document under the `researchRoot` resolved in Step 0.
 * `${input:autonomy:autonomous}`: (Optional) `autonomous` or `checkpointed`, per the Autonomy section.
 * `${input:audit:off}`: (Optional) `off` or `on`. When `on`, run the Phase 6 assessment evidence audit after Stage 2 completes, dispatching `/fix-assessment-finding` once per tier (`P0` -> `P1` -> `P2` -> `P3`) in ascending order.
 
@@ -48,10 +50,12 @@ Confirm exactly one completed consolidated research document exists. If none exi
 
 Execute every planner step by dispatching `Researcher Subagent` with the `agent` tool. Give each subagent this task:
 
-> Execute the workflow defined in `<prompt-file-path>` exactly, following that prompt and every instruction file whose `applyTo` matches it. Consolidated research document: `<consolidatedDoc>`. Write output per that prompt's own rules. Do not delegate further. Return: output artifact path, completion status (`Complete`, `Incomplete`, or `Blocked`), and any blocking reason.
+> Execute the workflow defined in `<prompt-file-path>` exactly, following that prompt and every instruction file whose `applyTo` matches it. Deployment topology: `<topology>`, resolved from the run context lock at `<lockPath>`. Research root: `<researchRoot>`. Consolidated research document: `<consolidatedDoc>`. Treat the supplied topology as the declared topology per the Deployment Topology Contract: do not re-resolve it, do not default it, and do not override it from repository contents or from the consolidated research. Write output per that prompt's own rules, stamped with that topology. Do not delegate further. Return: output artifact path, stamped topology, completion status (`Complete`, `Incomplete`, or `Blocked`), and any blocking reason.
 
 Rules:
 
+* Every dispatch passes the resolved `topology` and the resolved `researchRoot` explicitly, in addition to the lock on disk. The lock is the durable fallback for a subagent that loses context; the explicit values are the primary channel and always take precedence per the contract's Topology Resolution order.
+* Never dispatch any step before Step 0 resolves the topology.
 * Run steps strictly sequentially. The Stage 2 assessment sections are append-only to one report file and must never run in parallel.
 * Check `Researcher Subagent` availability before dispatching. If unavailable, tell the operator to enable the subagent (`agent`/`task`) capability and stop.
 * A step that returns `Incomplete` or `Blocked` stops the pipeline; surface the artifact and reason before continuing.
@@ -59,10 +63,21 @@ Rules:
 
 ## Required Steps
 
+### Step 0: Run Context Lock
+
+Run this before Step 1. Nothing else runs until it resolves.
+
+1. Resolve the deployment topology per the Topology Resolution order in the Deployment Topology Contract: a supplied `${input:topology}` first, otherwise the run context lock's `topology`.
+2. Locate the run context lock per the contract's Lock Auto-Location rule and read it once with a single full-range `read_file` call. Carry `primaryRegion`, `secondaryRegion`, and `researchRoot` verbatim; never re-derive or reformat them.
+3. If no lock resolves, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`. If more than one resolves, stop `Blocked` with `multiple run context locks found - supply topology explicitly`.
+4. Set `researchRoot` to the lock's value. Never default it here.
+
+Report the lock path, the resolved topology, and the carried values before Step 1 begins.
+
 ### Step 1: Bootstrap
 
 1. Read the Skill Reference Contract files in one parallel block.
-2. Resolve `consolidatedDoc` and verify the Preconditions.
+2. Resolve `consolidatedDoc` under the Step 0 `researchRoot` and verify the Preconditions.
 3. Confirm `Researcher Subagent` is available.
 
 ### Step 2: Planning (Phase 4)
@@ -93,17 +108,18 @@ Run only when `audit=on`. This step verifies that every citation, verbatim code 
 
 For each tier in `P0`, `P1`, `P2`, `P3`, dispatch after the previous returns `Complete`:
 
-> Execute the workflow defined in `.github/prompts/fix-assessment-finding.prompt.md` exactly, following that prompt and every instruction file whose `applyTo` matches it. Scope argument: `<TIER>`. Edit only the assessment report and its cross-reference sections per that prompt's rules. Do not delegate further. Return: the tier scorecard, citation table, contradiction flags, and completion status (`Complete`, `Incomplete`, or `Blocked`).
+> Execute the workflow defined in `.github/prompts/fix-assessment-finding.prompt.md` exactly, following that prompt and every instruction file whose `applyTo` matches it. Deployment topology: `<topology>`, resolved from the run context lock at `<lockPath>`; do not re-resolve or override it. Scope argument: `<TIER>`. Edit only the assessment report and its cross-reference sections per that prompt's rules. Do not delegate further. Return: the tier scorecard, citation table, contradiction flags, and completion status (`Complete`, `Incomplete`, or `Blocked`).
 
 * A tier that returns `Blocked`, or surfaces an R7 contradiction, stops the audit; surface the tier report and reason before continuing.
 * If `autonomy=checkpointed`, pause for operator review after each tier.
 
 ### Step 5: Completion
 
-Report the paths of the Master report, Developer Guide, and Code-Level Assessment report, with a one-line status per stage. When `audit=on`, add a one-line status per audited tier. State that the resiliency workflow is complete and point the operator to the final assessment report under `Microsoft Assessment/` (or the configured output location).
+Report the resolved topology and lock path, then the paths of the Master report, Developer Guide, and Code-Level Assessment report, with a one-line status per stage. When `audit=on`, add a one-line status per audited tier. State that the resiliency workflow is complete and point the operator to the final assessment report under `Microsoft Assessment/` (or the configured output location).
 
 ## Error Recovery
 
+* If Step 0 resolves no topology, stop `Blocked` with the contract's message and direct the operator to run `/hve-resiliency-topology-0-lock`. Never select a topology on the operator's behalf.
 * If the consolidated research document is missing or incomplete, stop and direct the operator to the Research Orchestrator.
 * If `Researcher Subagent` is unavailable, stop and tell the operator to enable the subagent capability.
 * If a planner step returns `Incomplete` or `Blocked`, stop, surface the artifact and reason, and let the operator resolve it before continuing.

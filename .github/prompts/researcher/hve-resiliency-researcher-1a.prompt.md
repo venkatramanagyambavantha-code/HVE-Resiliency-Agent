@@ -65,7 +65,7 @@ Any incomplete manifest, read or scan failure, clipping, lost or unreconciled ID
 
 ## Output Contract
 
-Write the result to `.copilot-tracking/research/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-1a-research.md`. Begin the file with required YAML Markdown metadata, including `title`, `description`, `ms.date`, `ms.topic`, `source-prompt: hve-resiliency-researcher-1a`, and `schema-version: 1`. Set `status: current` only when the run completes with all required Sections 1-3 committed. Set `status: incomplete` for every incomplete run. After the metadata, output exactly Sections 1-3 below and no other result section, remediation, advice, or example. Fold evidence into the applicable row. The metadata does not replace or add to the three result sections.
+Write the result to `<researchRoot>/<YYYY-MM-DD>/<repo-name>-hve-resiliency-researcher-1a-research.md`. Begin the file with required YAML Markdown metadata, including `title`, `description`, `ms.date`, `ms.topic`, `source-prompt: hve-resiliency-researcher-1a`, and `schema-version: 1`. Set `status: current` only when the run completes with all required Sections 1-3 committed. Set `status: incomplete` for every incomplete run. After the metadata, output exactly Sections 1-3 below and no other result section, remediation, advice, or example. Fold evidence into the applicable row. The metadata does not replace or add to the three result sections.
 
 ### Section 1 - Used Azure Services (Evidence Confirmed)
 

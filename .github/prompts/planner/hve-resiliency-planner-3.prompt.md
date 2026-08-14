@@ -1,6 +1,6 @@
 ---
 description: "Creates a Code-Level Resiliency Assessment report from HVE research and planner outputs for any Application service repository"
-argument-hint: "serviceName=... [reportTitle=...] [targetDeployment=...] [reviewPromptFiles={true|false}]"
+argument-hint: "serviceName=... [reportTitle=...] [topology={active-active|active-standby}] [targetDeployment=...] [reviewPromptFiles={true|false}]"
 ---
 
 # Resiliency Report Generator — Code-Level Assessment
@@ -9,37 +9,46 @@ argument-hint: "serviceName=... [reportTitle=...] [targetDeployment=...] [review
 
 * ${input:serviceName}: (Required) Service name matching the repo name; used to locate artifacts and populate all headers, sections, and repo references throughout the report.
 * ${input:reportTitle}: (Optional) H1 title. Default: "Code-Level Resiliency Assessment".
-* ${input:targetDeployment}: (Optional) Target deployment model. Default: "Active/Active".
+* ${input:topology}: (Optional) Deployment topology override, exactly `active-active` or `active-standby`. When omitted, resolve from the run context lock per the Deployment Topology Contract. There is no default.
+* ${input:targetDeployment}: (Optional) Override for the rendered target deployment string. When omitted, use the `targetDeployment` field carried verbatim from the run context lock. There is no default, and it is never "Active/Active" unless the lock says so.
 * ${input:reviewPromptFiles:false}: (Optional) When true, cross-reference subagent research files against planner outputs; flag discrepancies in the Assessment Overview.
+
+## Deployment Topology
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before reading any source artifact or rendering any section. Carry `topology`, `primaryRegion`, `secondaryRegion`, and `targetDeployment` verbatim from the run context lock; an explicit `${input:topology}` or `${input:targetDeployment}` overrides the corresponding lock value and nothing else.
+
+Stamp the resolved deployment topology in the report front matter as `topology: <active-active|active-standby>`, and in the Document Header as the `Target Deployment` value alongside the resolved regions. Stamp the deployment topology only; never stamp a data write model in that field.
+
+Never default the topology, never infer it from the Master Report, the Developer Guide, the consolidated research, or a `Target Deployment` string already present in an existing report.
 
 ## Source Artifacts
 
-Locate and read all of the following in full before generating the report. All files live under `.copilot-tracking/research/` (search recursively).
+Locate and read all of the following in full before generating the report. All files live under `<researchRoot>` (search recursively).
 
 * `{serviceName}-Master.md` — priorities, remediation, owners, open questions.
 * `{serviceName}-Developer-Guide.md` — code examples per finding (primary source for all code blocks).
 * `*-{serviceName}-research.md` — evidence-only consolidated research.
-* `subagents/` — all `prompt-N-topic.md` files under `.copilot-tracking/research/subagents/`.
+* `subagents/` — all `prompt-N-topic.md` files under `<researchRoot>/subagents/`.
 
 Use the Developer Guide for code samples, Master Report for priorities and remediation, Consolidated Research for evidence citations.
 
 ## Critical Context
 
-This report serves the {customer} engagement. The customer is transitioning from a single-region deployment with a passive DR target to an active/active deployment across two regions. Every finding must be evaluated through this lens. Use the classification rules and decision tree defined in `Application-planner-context.instructions.md` for all priority assignments.
+This report serves the {customer} engagement. The customer is transitioning from a single-region deployment in the primary region to `{targetDeployment}`, the declared topology across the primary and secondary regions resolved from the run context lock. Every finding must be evaluated through this lens. Use the classification rules and decision tree defined in `hve-resiliency-planner-context.instructions.md` for all priority assignments.
 
 All section headers, H3 group names, finding titles, and repo references must use `{serviceName}` (the repo name), not hardcoded service names like "Braintree" or "Fiserv". The H3 shared-service groups should reflect the service's actual dependencies as discovered in the research (e.g., "Payment Gateway / Transaction Processing", "Azure SQL / Data Integrity", "AKS / Pod Lifecycle").
 
 ## Region-Agnostic Language Rule
 
-The generated report must **never** reference "East US", "eastus", or any East region variant anywhere in the report, including section headers, finding descriptions, recommendations, code examples, and IaC tables. East US is a legacy DR target that is not part of the active/active architecture.
+The generated report must **never** hard-code a region name anywhere in the report, including section headers, finding descriptions, recommendations, code examples, and IaC tables. Render regions from `{primaryRegion}` and `{secondaryRegion}`, resolved from the run context lock, or use the topology-neutral terms below.
 
 Prefer region-agnostic terms throughout:
 
-* **Primary region** — the current production region
-* **Secondary region** or **failover region** — the target active/active peer
+* **Primary region** — the region serving production traffic today
+* **Secondary region** or **failover region** — the peer region of the declared target topology
 * **Both regions** — when referring to symmetric requirements
 
-"West US" and "West US 2" may be used when necessary (e.g., describing the customer's actual topology or referencing specific Helm values files), but prefer the generic terms above when the statement applies to any multi-region deployment.
+A resolved region name may appear only where the statement is specific to this run's deployment (e.g., describing the customer's actual topology or referencing a specific Helm values file), and even then it is rendered from `{primaryRegion}` or `{secondaryRegion}`, never typed as a literal. Prefer the generic terms above when the statement applies to any multi-region deployment.
 
 In code examples and fix blocks, use placeholder values like `{primaryRegion}`, `{secondaryRegion}`, or generic names (e.g., `apim-prod-region1.example.com`, `apim-prod-region2.example.com`) rather than region-specific hostnames.
 
@@ -171,7 +180,7 @@ Every P0, P1, P2, and P3 finding uses this exact format (field order must be pre
 
 **Finding field guidance:**
 
-* **Issue** (P0/P1): Explain how the issue is introduced or worsened by the transition from single-region to active/active. (P2/P3): Note that behavior is identical regardless of topology.
+* **Issue** (P0/P1): Explain how the issue is introduced or worsened by the transition from a single-region deployment to the resolved topology. (P2/P3): Note that behavior is identical regardless of topology.
 * **Resiliency Impact**: Frame in terms of zone failure or regional failover impact. Required for all `Resiliency Related: Yes` findings.
 * **Recommended Fix**: Must be specific enough for the customer's developers to implement independently without the team's involvement.
 
@@ -266,8 +275,9 @@ Before finalizing, confirm:
 * All Back to Top links use `#top`.
 * Every P0/P1/P2 finding draws from both the Master Report and the Developer Guide.
 * No hardcoded service names (e.g., "Braintree", "Fiserv") appear in H2, H3, or Repo(s) columns; use the generic shared-service group names and `{serviceName}`.
-* No references to "East US" or any East region variant appear anywhere in the report.
-* Region-specific names ("West US", "West US 2") are used only when necessary; generic terms ("primary region", "secondary region", "failover region") are preferred.
+* No hard-coded region name appears anywhere in the report; every region reference renders from `{primaryRegion}` or `{secondaryRegion}`.
+* Resolved region names are used only when necessary; generic terms ("primary region", "secondary region", "failover region") are preferred.
+* The report front matter and the `Target Deployment` header carry the resolved topology and `{targetDeployment}` from the run context lock.
 * When `reviewPromptFiles: true`, all research findings are accounted for.
 * Assessment Overview themes cross-reference finding IDs.
 * IaC Gap Analysis has both "Available to Review" and "Not Available" tables.
