@@ -1,6 +1,6 @@
 ---
 description: Deployment topology contract - resolution, definitions, assessment deltas, and stamping rules for all resiliency prompts
-applyTo: '.github/prompts/researcher/hve-resiliency-*.prompt.md, .github/prompts/researcher/service/hve-resiliency-*.prompt.md, .github/prompts/planner/hve-resiliency-*.prompt.md'
+applyTo: '.github/prompts/hve-resiliency-*.prompt.md, .github/prompts/researcher/hve-resiliency-*.prompt.md, .github/prompts/researcher/service/hve-resiliency-*.prompt.md, .github/prompts/planner/hve-resiliency-*.prompt.md'
 ---
 
 # Deployment Topology Contract
