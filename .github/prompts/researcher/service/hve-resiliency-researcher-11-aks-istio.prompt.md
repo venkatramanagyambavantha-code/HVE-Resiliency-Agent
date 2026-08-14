@@ -29,6 +29,71 @@ Evaluate these ten questions without adding assessment areas:
 * Do readiness probes reflect real dependency health?
 * Could unhealthy pods still receive traffic?
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before any repository
+search, file read, or traversal hop. The resolved topology scopes the ten existing questions in
+the Assessment Scope above. It adds no assessment area, question, finding field, or section,
+and it never changes the canonical finding schema.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing
+questions:
+
+* Replica counts and provisioned capacity per cluster, given that each cluster absorbs full
+  load on partner loss
+* HorizontalPodAutoscaler minimum replicas and maximum headroom measured against full
+  single-region load, not against steady-state split load
+* PodDisruptionBudget `minAvailable` or `maxUnavailable` values that block drain, rollout, or
+  node loss while a cluster is carrying surge traffic
+* `topologySpreadConstraints`, pod anti-affinity, and zone spread within each live cluster
+* Readiness and liveness probe semantics that decide whether a pod in a live cluster keeps
+  receiving traffic, and probe alignment with the Global Load Balancer while both clusters are
+  in rotation
+* Istio connection-pool ceilings, outlier detection, retry budgets, and timeouts sized for one
+  cluster's share rather than the whole load
+* Locality load balancing and failover priority that shifts traffic cross-cluster while both
+  clusters serve
+* Session affinity, sticky routing, and in-cluster cache assumptions that hold only while a
+  caller stays in one cluster
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing
+questions instead:
+
+* Standby replica counts, including zero-replica or scaled-down workloads, and the scale-up
+  that is the promotion path
+* HorizontalPodAutoscaler minimums on the standby, and whether scaling from that minimum to
+  full load completes within RTO
+* Cold start on the standby: image pull, node pool warm-up, cluster autoscaler node
+  provisioning, and application startup, which are the promotion path
+* Provisioned standby node and pod capacity, distinct from capacity that is only defined in a
+  manifest or chart
+* PodDisruptionBudget, rollout, and disruption settings on the standby that no live traffic has
+  exercised
+* Manifest, chart value, and Istio configuration parity between the clusters, including drift
+  that stays unobservable while the standby is idle
+* Readiness and liveness probes on the standby that must prove readiness without live traffic,
+  including probes that only pass once traffic arrives
+* CronJobs, leader-elected controllers, and singleton workloads that must not run on the
+  standby, and must activate on promotion
+* Failback and re-quiescing of the former standby after the primary region returns
+
+Do not emit a finding and do not record an evidence gap for a dimension the resolved topology
+places out of scope. Under `active-active`, standby scale-from-zero, cold start and warm-up,
+standby configuration parity, and promotion-path dimensions are out of scope. Under
+`active-standby`, simultaneous dual-cluster traffic handling, cross-cluster session affinity
+and cache coherence, and concurrent execution of the same workload in both clusters are out of
+scope. A suppressed dimension is never recorded as an evidence gap, an `Unknown` value, or a
+finding row.
+
+Where observed evidence does not fit the declared topology, continue under the declared
+topology and record the conflict per the contract's Mismatch Handling rules. Never switch
+topology, never redirect to another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary
+region" and "secondary region", in every finding. Do not hard-code region names in rendered
+output.
+
 ## Bounded Evidence Protocol
 
 Apply this protocol only to dependencies confirmed by the inherited service
@@ -78,6 +143,11 @@ search narration, file-analysis narration, and repeated evidence from the
 authoritative research artifact. Read only the smallest relevant line ranges.
 
 ## Evidence and Output Contract
+
+Stamp the resolved deployment topology in the artifact's front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved
+regions as an evaluation condition in the concise scope summary. Stamping is
+required, is not a fourth section class, and is not a schema field.
 
 Use `Unknown` only in an existing schema field and append either the exhausted
 repository source class or the named external evidence gap. Never invent a

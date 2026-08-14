@@ -38,6 +38,32 @@ Silent-degradation discovery hints (evidence-only):
 
 Never emit a row solely because a metric or alarm is absent; require positive repository evidence of an actual degraded behavior on a production path.
 
+## Topology Deltas
+
+Read the resolved deployment topology from the frozen manifest, exactly as this stage reads `eligibleDependencies`. Do not re-resolve it, do not infer it from repository contents, and do not override it. If the manifest records no topology, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`. The [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) governs. The resolved topology scopes the silent-degradation discovery hints above. It adds no assessment topic, output field, or section, and it never changes the Required Row Schema.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing hints:
+
+* Degraded behavior that manifests in one region only, since a caller may land in either region and see different behavior request to request with no signal.
+* Cache-only and stale-serve fallbacks whose coherence assumption holds only while a caller stays in one region.
+* Session state and affinity assumptions that silently downgrade a response when a request resolves in the region that did not create the state.
+* Read-your-own-writes exposure that surfaces as a stale or downgraded response rather than an error.
+* Feature-flag and configuration branches evaluated per region, where one region silently bypasses a dependency while the partner does not.
+* Bidirectional replication lag absorbed silently by a fallback instead of being surfaced to an operator.
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing hints instead:
+
+* Degraded paths on the secondary that stay invisible because no live traffic exercises them while it is idle.
+* Configuration and feature-flag drift on the secondary that silently changes functional behavior at promotion.
+* Health reporting that cannot distinguish a ready standby from a silently degraded one without live traffic.
+* Fallbacks that quietly serve from state rebuilt at promotion, including caches that start cold and downgrade responses with no operator signal.
+* Bypass branches that remain permanently active on the standby because their dependency is reachable only from `{primaryRegion}`.
+* One-way replication lag absorbed silently by a stale-serve fallback during the cutover window.
+
+Do not emit a row and do not record an evidence gap for a dimension the resolved topology places out of scope. Under `active-active`, standby parity while idle, promotion-time state rebuild, and cutover-window staleness are out of scope and must not be recorded as evidence gaps. Under `active-standby`, silent divergence between two concurrently serving regions, cross-region session affinity, and read-your-own-writes across regions are out of scope and must not be recorded as evidence gaps.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules. Never switch topology and never decline to run.
+
 ## Bounded Discovery
 
 Apply the bounded-discovery limits in the shared contract per eligible dependency and per this outcome only. Counters do not carry over from another outcome fill and cannot be reset by aliases, environments, or wording.
@@ -52,7 +78,7 @@ Never combine regional-failover and partial-outage evidence in one row. If the s
 
 ## Output
 
-Write the fragment to `<fragmentDir>/silent-degradation.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.2 Silent Functional Degradation` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-2-silent-degradation`, `outcome-key: silent-degradation`, and the fragment's terminal status. Do not modify the skeleton artifact. Do not touch any other fragment.
+Write the fragment to `<fragmentDir>/silent-degradation.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.2 Silent Functional Degradation` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-2-silent-degradation`, `outcome-key: silent-degradation`, and the fragment's terminal status. Stamp the resolved deployment topology in the same frontmatter as `topology: <active-active|active-standby>`, carried verbatim from the manifest, and state it with the resolved regions as an evaluation condition. Stamping is required and adds no field to the Required Row Schema. Do not modify the skeleton artifact. Do not touch any other fragment.
 
 ## Completion
 

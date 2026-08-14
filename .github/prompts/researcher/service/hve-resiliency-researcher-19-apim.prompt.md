@@ -69,6 +69,69 @@ dependency-criterion pairs. Evaluate every pair independently within the depende
 shared counters. Keep distinct evidenced failure modes in separate issue rows; never
 combine scenarios.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before the eligibility
+gate produces a terminal status and before any repository or production discovery. The resolved
+topology scopes the seven existing assessment criteria above. It adds no criterion, assessment
+area, issue field, or section, and it never changes the Output Format below. The resolved
+topology governs over the architecture assumptions and over criterion 4's wording; neither is a
+topology resolution source.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing
+criteria:
+
+* Backend pool membership and backend service URLs configured in each gateway, and whether a
+  gateway forwards to backends in the partner region while both regions serve
+* Regional gateway unit counts and capacity, given that each region absorbs full load on
+  partner loss
+* Backend pre-scaling and autoscaling sized for a partner-loss surge rather than for the
+  steady-state split
+* Named values, certificates, and secrets applied uniformly to both gateways where the regions
+  require distinct values
+* Policy behavior that is per-gateway while callers are split across gateways, including retry,
+  timeout, circuit-breaker state, rate-limit counters, quota counters, and response caching
+* Cache coherence and session or affinity assumptions that hold only while a caller stays with
+  one gateway
+* Health-probe alignment between the Global Load Balancer and both live gateways, and the
+  effect of removing one live gateway from rotation
+* Idempotency of steady-state request handling, including duplicate-charge exposure, given that
+  both gateways forward concurrently
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing
+criteria instead:
+
+* The standby gateway's backend pool and backend URL configuration, which stays unexercised
+  until promotion and whose drift is unobservable while the standby is idle
+* Parity of APIs, products, policies, named values, and certificates between the two gateway
+  instances
+* Standby gateway unit count and capacity, provisioned rather than only defined
+* Region-local certificate and secret resolution on the standby gateway, exercised only at
+  promotion
+* Pre-scaling and scale-from-zero of the standby's backends, which are the promotion path
+* Readiness evidence for the standby gateway that must be produced without live traffic
+* Rate-limit, quota, and cache state that is rebuilt rather than carried at promotion, and the
+  correctness consequences of rebuilding it
+* Cutover-window duplicate processing and data-loss exposure, bounded to promotion rather than
+  steady state
+* Failback and the return of traffic after the primary region recovers
+
+Do not emit a finding and do not record an evidence gap for a dimension the resolved topology
+places out of scope. Under `active-active`, standby gateway parity, unexercised standby backend
+configuration, pre-scaling from idle, and promotion-path dimensions are out of scope. Under
+`active-standby`, concurrent dual-gateway routing, counters and cache split across two live
+gateways, and cross-gateway session affinity dimensions are out of scope. A suppressed
+dimension is never recorded as an evidence gap, an `Unknown` value, or an issue row.
+
+Where observed evidence does not fit the declared topology, continue under the declared
+topology and record the conflict per the contract's Mismatch Handling rules. Never switch
+topology, never redirect to another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary
+region" and "secondary region", in every issue row. Do not hard-code region names in rendered
+output.
+
 ## Cumulative Discovery Limits
 
 For each eligible APIM dependency, initialize one non-resetting set of counters:
@@ -174,7 +237,13 @@ blocking status applies:
 ## Output Format
 
 Write the authoritative research artifact to `.copilot-tracking/research/` with the
-repository name as the filename prefix. Keep non-finding and blocked states outside
+repository name as the filename prefix. Stamp the resolved deployment topology in the
+artifact's front matter as `topology: <active-active|active-standby>`, and state it with
+the resolved regions as an evaluation condition alongside the report-level status block.
+Stamping is required, is not a report-level field, and is not one of the six issue
+fields below.
+
+Keep non-finding and blocked states outside
 issue rows in this compact report-level block:
 
 * Status: <one report outcome>

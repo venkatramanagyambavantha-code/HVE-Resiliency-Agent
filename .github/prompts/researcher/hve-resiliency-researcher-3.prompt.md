@@ -53,6 +53,40 @@ Determine from code or configuration whether endpoints, credentials, or identiti
 
 Do not add assessment areas beyond dependency survivability, regional assumptions, fallback or multi-region behavior, existing mitigations, constraints, and Azure dependency health-to-GLB linkage.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before the survey pass or any per-dependency discovery. The resolved topology scopes the existing Assessment Scope areas above. It adds no assessment area, finding field, or section, and it never changes the Repeated Finding Schema.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing areas:
+
+* Dependency endpoint, host, and connection selection that must resolve from either region concurrently, and whether the dependency accepts writes from both regions at once
+* Credentials or identities scoped to one region while both regions call the dependency in steady state
+* Idempotency and duplicate processing on dependency calls under steady-state concurrent traffic
+* Identifiers, sequences, or keys the dependency issues or requires, where uniqueness must hold across both regions
+* Read-your-own-writes exposure when a dependency read resolves in the region that did not take the write
+* Scheduled, singleton, or leader-elected dependency work that would execute in both regions at once
+* Session, affinity, or cache assumptions in the dependency client that hold only while a caller stays in one region
+* Per-region dependency capacity, given that each region absorbs full load on partner loss
+* Health-to-GLB linkage that reports own-region dependency health continuously, since either region may be routed to at any moment
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing areas instead:
+
+* One-way replication from the dependency's primary to its secondary, and the recovery point exposed at cutover
+* Whether a secondary endpoint, credential, or identity for the dependency exists and is exercised, rather than only defined
+* Deployment and configuration parity of the dependency binding on the secondary, including drift that stays unobservable while the secondary is idle
+* Cold start, warm-up, connection establishment, and scale-from-zero on the secondary dependency path, which is the promotion path
+* Provisioned dependency capacity in the secondary region, distinct from capacity that is only defined
+* Idempotency and duplicate processing at cutover only, bounded to the promotion window
+* Scheduled or singleton dependency work that must not execute on the standby and must activate on promotion
+* Health-to-GLB linkage that additionally proves standby dependency readiness without live traffic
+* Failover and failback steps the dependency requires, including reverse replication after the primary returns
+
+Do not emit a finding or record an Unknown for a dimension the resolved topology places out of scope. Under `active-active`, replication-at-cutover, standby-parity, and cold-start dimensions are out of scope. Under `active-standby`, concurrent multi-region dependency writes, cross-region identifier collision, and read-your-own-writes dimensions are out of scope. A suppressed dimension is never recorded as an evidence gap and never enters the report-level Unknown summary under any of the three forms.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules. Never switch topology and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary region" and "secondary region", in every finding row. Do not hard-code region names in rendered output.
+
 ## Discovery Limits
 
 Default to repository-only discovery. Initialize the prompt round counter and every per-dependency counter once. Counters are cumulative and never reset by round, source, dependency criterion, alias, environment, or delegation.
@@ -156,6 +190,8 @@ The `platform library:` qualifier is required so these entries can be separated 
 Never state, infer, or estimate a packaged value. Never read, unpack, decompile, disassemble, or traverse into a packaged artifact, and never admit one to the survey manifest. A platform library dependency is established from repository evidence only.
 
 ## Repeated Finding Schema
+
+Stamp the resolved deployment topology in the artifact's front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation condition in the artifact's scope alongside the assessed scenarios. Stamping is required and is not one of the fields below.
 
 For each finding include these fields exactly once and in this order. Do not add, remove, rename, or reorder fields:
 

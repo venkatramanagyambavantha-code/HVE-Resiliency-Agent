@@ -19,6 +19,21 @@ Use [Application Platform Context](../../instructions/hve-resiliency-platform-co
 * If either prerequisite artifact from a prior step is missing, unreadable, or structurally invalid, a prior step failed or ran out of order: name the prerequisite and stop `Blocked` per Status and Failure Semantics before writing anything. Auto-location resolves multiple candidates deterministically, so multiple candidates never block.
 * If both prerequisites resolve and are readable but their combined Section 1 inventory lists zero confirmed dependencies, do not block: emit the skeleton and a frozen manifest with an empty `eligibleDependencies` list, and record that no confirmed dependency was in scope.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) before enumerating research artifacts and before reading any repository file. The resolved topology scopes the downstream pipeline's existing assessment topics. It adds no assessment topic, output field, or section, and it never changes the Required Row Schema.
+
+This stage renders no failure-mode row, so it applies no dimension itself. It resolves the topology exactly once and freezes it, so the four parallel outcome fills inherit it without re-resolving:
+
+* Record `topology`, `primaryRegion`, and `secondaryRegion` in the frozen manifest sidecar, carried verbatim from the lock, alongside `eligibleDependencies`.
+* Stamp the resolved deployment topology in the skeleton artifact's front matter as `topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation condition in the skeleton's `Scope and Assumptions` section. Stamping is required and adds no section to the skeleton.
+
+The frozen topology is the single source for every downstream stage. Each fill, verify, and finalize stage reads it from the manifest exactly as it reads `eligibleDependencies`, and never re-resolves it, re-derives it from repository contents, or overrides it.
+
+Never narrow `eligibleDependencies` by topology, and never record a dimension the resolved topology places out of scope as an evidence gap in the manifest or the skeleton. Under `active-active`, the replication-lag-at-cutover, standby deployment and configuration parity, cold-start and scale-from-zero, and failback dimensions are out of scope downstream. Under `active-standby`, the concurrent multi-region write conflict, cross-region identifier and sequence collision, and read-your-own-writes dimensions are out of scope downstream. Suppressed dimensions must not be recorded as evidence gaps at any stage.
+
+Where an accepted source artifact's `topology` stamp or observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules, recording the artifact in the manifest as `topology: mismatched` alongside its own stamp. Never switch topology and never decline to run.
+
 ## Discovery and Selection
 
 Enumerate `.md` files under the resolved research root and directly under any `researchRoot/YYYY-MM-DD/` subdirectory. Sort by normalized workspace-relative path using ordinal comparison. Do not descend into `subagents/`, `validator/`, or `sandbox/`. Do not follow symbolic links out of the research root. Reject absolute paths, traversal segments, and alternate separators. Normalize to `/` while preserving repository path case.
@@ -61,11 +76,13 @@ schema-version: 1
 status: draft
 pipeline: split
 pipeline-stage: scaffold
+topology: <active-active|active-standby>
 ---
 
 ## Scope and Assumptions
 
 - Scope: Failure and degraded mode behavior of `<repo-name>` for the dependencies confirmed in Prompt 1a Section 1 and Prompt 1b Section 1, evaluated between West US 2 and West US regional failover.
+- Deployment topology evaluated: `<active-active|active-standby>`, with `<primaryRegion>` as the primary region and `<secondaryRegion>` as the secondary region, resolved from the run context lock and frozen by the scaffold manifest.
 - Eligible dependencies frozen by the scaffold manifest: see `<manifest-path>`.
 - Excluded per platform Service Exclusion Rule: every dependency classified in Prompt 1a Section 2 or 3 and Prompt 1b Section 2 or 3.
 

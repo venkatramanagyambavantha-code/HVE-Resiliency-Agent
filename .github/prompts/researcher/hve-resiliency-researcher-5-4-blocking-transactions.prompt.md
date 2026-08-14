@@ -39,6 +39,32 @@ Blocking-transactions discovery hints (evidence-only):
 
 Never emit a row solely because a timeout value is unknown; require positive repository evidence that a production code path can block, deadlock, or exhaust a resource under the stated dependency failure type.
 
+## Topology Deltas
+
+Read the resolved deployment topology from the frozen manifest, exactly as this stage reads `eligibleDependencies`. Do not re-resolve it, do not infer it from repository contents, and do not override it. If the manifest records no topology, stop `Blocked` with `topology not established - run /hve-resiliency-topology-0-lock`. The [Deployment Topology Contract](../../instructions/hve-resiliency-topology.instructions.md) governs. The resolved topology scopes the blocking-transactions discovery hints above. It adds no assessment topic, output field, or section, and it never changes the Required Row Schema.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing hints:
+
+* Production calls that cross regions, where a dependency in the partner region stalls a request served in this region.
+* Distributed locks, leases, and leader-election waits contended by both regions under steady state.
+* Thread-pool, connection-pool, and scheduler exhaustion in one region while it absorbs full load on partner loss.
+* Transactions held open across a cross-region coordination or conflict-resolution step.
+* Schedulers, singletons, and consumers running in both regions that contend for the same lock, row, or partition and deadlock.
+* Health endpoints that must report own-region health continuously but block on a partner-region dependency.
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing hints instead:
+
+* Boot-time and promotion-time calls that block before the secondary can accept traffic, extending cutover beyond its bounded time.
+* Retry and backoff loops on the standby that stall against a dependency reachable only from `{primaryRegion}`.
+* Pool, thread, and connection capacity actually provisioned on the secondary, distinct from capacity that is only defined, and exhaustion when it absorbs full load at promotion.
+* Consumers, producers, and scheduled jobs that must not run on the standby but still block, poll, or hold locks against shared state while idle.
+* Readiness and health probes on the idle standby that block on a dependency and cannot prove readiness without live traffic.
+* Failback and reverse-replication steps that hold a transaction, lock, or session open while the primary returns.
+
+Do not emit a row and do not record an evidence gap for a dimension the resolved topology places out of scope. Under `active-active`, promotion-window blocking, standby-idle blocking, cold-start and warm-up stalls, and failback-path blocking are out of scope and must not be recorded as evidence gaps. Under `active-standby`, cross-region concurrent lock contention, dual-region singleton deadlock, and steady-state partner-region call blocking are out of scope and must not be recorded as evidence gaps.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and record the conflict per the contract's Mismatch Handling rules. Never switch topology and never decline to run.
+
 ## Bounded Discovery
 
 Apply the bounded-discovery limits in the shared contract per eligible dependency and per this outcome only. Counters do not carry over from another outcome fill and cannot be reset by aliases, environments, or wording.
@@ -53,7 +79,7 @@ Never combine regional-failover and partial-outage evidence in one row. If the s
 
 ## Output
 
-Write the fragment to `<fragmentDir>/blocking-transactions.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.4 Blocking Transactions` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-4-blocking-transactions`, `outcome-key: blocking-transactions`, and the fragment's terminal status. Do not modify the skeleton artifact. Do not touch any other fragment.
+Write the fragment to `<fragmentDir>/blocking-transactions.md`, where `<fragmentDir>` is the `fragmentDir` recorded in the manifest. Begin the file with the `## 5.4 Blocking Transactions` heading followed by frontmatter recording `source-prompt: hve-resiliency-researcher-5-4-blocking-transactions`, `outcome-key: blocking-transactions`, and the fragment's terminal status. Stamp the resolved deployment topology in the same frontmatter as `topology: <active-active|active-standby>`, carried verbatim from the manifest, and state it with the resolved regions as an evaluation condition. Stamping is required and adds no field to the Required Row Schema. Do not modify the skeleton artifact. Do not touch any other fragment.
 
 ## Completion
 

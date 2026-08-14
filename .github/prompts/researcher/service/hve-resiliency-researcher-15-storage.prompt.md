@@ -40,6 +40,82 @@ Azure Queue Storage or Table Storage can identify the confirmed Storage service
 type, but does not add an assessment area. Analyze it only through the seven
 areas above.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md)
+before the prerequisite gate, the manifest, or any query family. The
+resolved topology scopes the seven assessment areas above. It adds no
+assessment area, finding field, or section, and it never changes the
+Authoritative Finding Schema.
+
+The account replication mode remains a claim to verify from evidence.
+The declared deployment topology never establishes LRS, ZRS, GRS, GZRS,
+RA-GRS, or RA-GZRS, and an observed replication mode never establishes
+or overrides the declared deployment topology.
+
+When the resolved topology is `active-active`, treat these as in scope
+within the existing areas:
+
+* Concurrent writes to the same blob, file, queue message, or entity
+  from both regions, and the ETag, lease, metadata, or versioning
+  behavior that governs them
+* A single-writable-region account, such as an evidenced LRS or ZRS
+  account or a GRS account whose secondary is not writable, absorbing
+  writes issued from both regions
+* Read access at the secondary, including whether RA-GRS or RA-GZRS
+  read endpoints are evidenced, and whether a read there may lag a
+  write taken in the other region
+* Endpoint, account-name, or connection binding that pins one region
+  while both regions serve traffic
+* Blob, file, queue, and entity naming, lease, and idempotency schemes
+  that must not collide across regions
+* Asynchronous replication lag observed under steady state rather than
+  only at cutover
+* Alignment between GLB health probes and own-region Storage health,
+  reported continuously
+
+When the resolved topology is `active-standby`, treat these as in scope
+within the existing areas instead:
+
+* Recovery point exposure at cutover under asynchronous geo-replication
+  (GRS, GZRS, RA-GRS, or RA-GZRS), and the blobs, files, messages, or
+  entities at risk
+* An evidenced locally redundant account, such as LRS or ZRS, that has
+  no secondary-region copy to promote
+* Read access at the secondary before promotion, including whether the
+  standby can read at all when only GRS or GZRS is evidenced
+* Customer-managed account failover and failback steps, their ordering,
+  and evidenced runbook gaps
+* Endpoint selection that must reach the promoted account without a
+  restart or a redeployment
+* Deployment and configuration parity of the secondary, including
+  container, share, queue, or table provisioning drift that stays
+  unobservable while the secondary is idle
+* Cold-path behavior on first access after promotion, which is the
+  promotion path
+* Reverse replication and re-protection after the original region
+  returns
+
+Do not emit a finding or record an evidence gap for a dimension the
+resolved topology places out of scope; dispose any such candidate as
+out of scope. Under `active-active`, recovery-point-at-cutover,
+account-failover-runbook, and secondary-parity dimensions are out of
+scope. Under `active-standby`, concurrent multi-region write conflict,
+cross-region naming collision, and cross-region read-your-own-writes
+dimensions are out of scope. A suppressed dimension is never recorded
+as an evidence gap, an `Unknown` field value, or a `No evidence found
+within bounded coverage` entry.
+
+Where observed evidence does not fit the declared topology, continue
+under the declared topology and record the conflict per the contract's
+Mismatch Handling rules. Never switch topology, never redirect to
+another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or
+the terms "primary region" and "secondary region", in every finding. Do
+not hard-code region names in rendered output.
+
 ## Prerequisite Scope Contract
 
 Derive `<repository-name>` once from the case-preserving root-directory basename.
@@ -355,6 +431,12 @@ immutable manifest summary, coverage and cap ledger, candidate disposition
 ledger, evidence gaps, findings, and terminal status. Ledgers are control
 sections and do not add finding fields or assessment areas. On a prerequisite
 or pre-research tool block, use the minimal form defined above.
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved
+regions as an evaluation condition in the assessment contract. Stamp the
+resolved deployment topology only; never stamp an account replication mode in
+that field. Stamping is required and adds no artifact section.
 
 ## Authoritative Finding Schema
 

@@ -47,6 +47,57 @@ Keep the Cosmos DB scope closed to these eight assessment areas:
 
 Do not add assessment areas, ownership fields, recommendations, alternatives, examples, or code changes.
 
+## Topology Deltas
+
+Resolve the deployment topology per the [Deployment Topology
+Contract](../../../instructions/hve-resiliency-topology.instructions.md) before the prerequisite gate,
+the manifest freeze, or any query family. The resolved topology scopes the eight assessment areas above.
+It adds no assessment area, ownership field, or section, and it never changes the seven-field finding
+schema in Output and handoff.
+
+The declared deployment topology never establishes that the account has multi-region writes, Last Write
+Wins, or any preferred-location set. Those remain claims to verify from repository evidence.
+
+When the resolved topology is `active-active`, treat these as in scope within the existing areas:
+
+* Preferred-location lists that name one region as the sole write target while both regions serve writes
+* Client construction that pins a single write endpoint or hard-codes a regional host
+* Concurrent writes to the same document from both regions, and the conflict-resolution behavior that
+  governs them, including Last Write Wins only when evidenced
+* Session-token propagation when a read resolves in the region that did not take the write
+* Identifier, `_id`, shard-key, or sequence generation that must stay unique across both regions
+* Write idempotency and duplicate suppression under steady state, given both regions write concurrently
+* 429 throttling and retry behavior when both regions draw on the same provisioned throughput
+* Health-probe and global load balancer alignment that reports own-region health continuously
+
+When the resolved topology is `active-standby`, treat these as in scope within the existing areas instead:
+
+* One-way replication lag from the write region to the secondary, and the documents at risk at cutover
+* Recovery-point exposure at cutover, and any stated no-data-loss acceptance boundary measured against it
+* Preferred-location and failover-priority ordering that must promote the secondary on demand
+* Deployment and configuration parity of the secondary client configuration, including drift that stays
+  unobservable while the secondary is idle
+* Cold client construction, connection warm-up, and first-write behavior on the secondary, which is the
+  promotion path
+* Mid-request behavior when the single write region becomes unavailable, and whether the driver reaches
+  the promoted region without a restart
+* Session state and read-your-writes behavior rebuilt at promotion rather than carried across it
+* Failback and reverse replication after the original write region returns
+
+Do not admit a candidate, emit a finding, or record an evidence gap for a dimension the resolved topology
+places out of scope. Under `active-active`, replication-at-cutover, secondary-parity, and cold client
+start dimensions are out of scope. Under `active-standby`, concurrent multi-region write conflict,
+cross-region identifier collision, and cross-region read-your-own-writes dimensions are out of scope. A
+suppressed dimension is never recorded as an evidence gap, an `Unknown: evidence unavailable
+(<evidence-gap-id>)` value, or a `Not observed in the checked manifest` entry.
+
+Where observed evidence does not fit the declared topology, continue under the declared topology and
+record the conflict per the contract's Mismatch Handling rules. Never switch topology, never redirect to
+another prompt, and never decline to run.
+
+Use the resolved `{primaryRegion}` and `{secondaryRegion}` values, or the terms "primary region" and
+"secondary region", in every finding. Do not hard-code region names in rendered output.
+
 ## Prerequisite gate
 
 Validate both input artifacts before repository discovery:
@@ -267,6 +318,21 @@ where `<repository-name>` is the sanitized current repository root directory nam
 terminal status, checked manifest roots and exclusions, completed query and read coverage, evidence gaps,
 hard-cap usage, compact candidate disposition and assertion-mapping counts, and zero-finding statement
 when applicable.
+
+Stamp the resolved deployment topology in the artifact front matter as
+`topology: <active-active|active-standby>`, and state it with the resolved regions as an evaluation
+condition alongside the checked manifest roots. Stamp the resolved deployment topology only; never stamp
+a write model in that field. Stamping is required and adds no artifact section.
+
+Record one artifact-level labelled field `Data write model:` whose value is exactly one of
+`single-master`, `multi-master`, `mixed`, or `unknown`, followed by the sanitized file-line citations that
+support it. Use `unknown` when the frozen manifest and completed query families do not establish the write
+model; never derive it from the declared deployment topology, an Azure default, or product documentation.
+This field records the discovered write model of the datastore, not a deployment topology. It never
+establishes, adjusts, or overrides the declared deployment topology stamped on this artifact, and the
+declared topology never establishes it; where the two do not fit, record the conflict per Mismatch
+Handling. Downstream prompts consume this field as a cross-check. It is an artifact-level field, placed
+outside finding rows, and is not one of the seven finding fields below.
 
 Render each valid finding once with exactly these fields and in this order:
 
